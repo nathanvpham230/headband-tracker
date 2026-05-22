@@ -68,44 +68,34 @@
 
     window.addEventListener('resize', () => setTimeout(resizeCanvas, 300));
 
-    // Calculate cover dimensions — same as CSS object-fit: cover
-    // This makes skeleton coordinates match exactly what's visible on screen
     function getCoverDimensions() {
       const screenW = canvas.width;
       const screenH = canvas.height;
       const videoW = video.videoWidth;
       const videoH = video.videoHeight;
-
       const screenRatio = screenW / screenH;
       const videoRatio = videoW / videoH;
-
       let drawW, drawH, offsetX, offsetY;
-
       if (screenRatio > videoRatio) {
-        // Screen is wider than video — fit width, crop top/bottom
         drawW = screenW;
         drawH = screenW / videoRatio;
         offsetX = 0;
         offsetY = (screenH - drawH) / 2;
       } else {
-        // Screen is taller than video — fit height, crop left/right
         drawH = screenH;
         drawW = screenH * videoRatio;
         offsetX = (screenW - drawW) / 2;
         offsetY = 0;
       }
-
       return { drawW, drawH, offsetX, offsetY };
     }
 
     async function startCamera(lens) {
       isDetecting = false;
-
       if (currentStream) {
         currentStream.getTracks().forEach(t => t.stop());
         currentStream = null;
       }
-
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       const constraints = {
@@ -121,7 +111,6 @@
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
         currentStream = stream;
         video.srcObject = stream;
-
         await new Promise(resolve => video.onloadedmetadata = resolve);
         await new Promise(resolve => {
           if (video.readyState >= 2) resolve();
@@ -165,19 +154,16 @@
       try {
         statusEl.textContent = 'Requesting camera...';
         await startCamera('ultrawide');
-
         statusEl.textContent = 'Loading pose model...';
         detector = await poseDetection.createDetector(
           poseDetection.SupportedModels.MoveNet,
           { 
-            modelType: poseDetection.movenet.modelType.MULTIPOSE_LIGHTNING,
+            modelType: poseDetection.movenet.modelType.MULTIPOSE_THUNDER,
             enableTracking: true,
             trackerType: poseDetection.TrackerType.BoundingBox
           }
         );
-
         statusEl.textContent = 'Running — point at people';
-
       } catch (err) {
         statusEl.textContent = 'Setup error: ' + err.message;
         statusEl.style.background = 'darkred';
@@ -186,36 +172,29 @@
 
     async function detect() {
       if (!isDetecting) return;
-
       requestAnimationFrame(async () => {
         if (!isDetecting) return;
-
         if (detector && video.readyState === 4) {
           try {
             const poses = await detector.estimatePoses(video);
-            
-            // Draw video using cover dimensions — no stretch
             const { drawW, drawH, offsetX, offsetY } = getCoverDimensions();
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             ctx.drawImage(video, offsetX, offsetY, drawW, drawH);
-
             for (const pose of poses) {
-              drawSkeleton(pose.keypoints, offsetX, offsetY, drawW, drawH);
+              if (pose.score > 0.1) {
+                drawSkeleton(pose.keypoints, offsetX, offsetY, drawW, drawH);
+              }
             }
-
             statusEl.textContent = `Running — ${poses.length} person${poses.length !== 1 ? 's' : ''} detected`;
-
           } catch(e) {
             // skip bad frames
           }
         }
-
         if (isDetecting) detect();
       });
     }
 
     function drawSkeleton(keypoints, offsetX, offsetY, drawW, drawH) {
-      // Scale keypoints to match the cover-fitted video on screen
       const scaleX = drawW / video.videoWidth;
       const scaleY = drawH / video.videoHeight;
 
@@ -235,12 +214,11 @@
       const kpMap = {};
       for (const kp of keypoints) kpMap[kp.name] = kp;
 
-      // Draw lines
       ctx.strokeStyle = 'lime';
       ctx.lineWidth = 2;
       for (const [a, b] of connections) {
         const kpA = kpMap[a], kpB = kpMap[b];
-        if (kpA?.score > 0.3 && kpB?.score > 0.3) {
+        if (kpA?.score > 0.1 && kpB?.score > 0.1) {
           ctx.beginPath();
           ctx.moveTo(x(kpA), y(kpA));
           ctx.lineTo(x(kpB), y(kpB));
@@ -248,9 +226,8 @@
         }
       }
 
-      // Draw dots
       for (const kp of keypoints) {
-        if (kp.score > 0.3) {
+        if (kp.score > 0.1) {
           ctx.beginPath();
           ctx.arc(x(kp), y(kp), 6, 0, 2 * Math.PI);
           ctx.fillStyle = ['nose','left_eye','right_eye','left_ear','right_ear']
