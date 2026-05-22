@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Headband Tracker B</title>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-fullscreen">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; width: 100vw; height: 100vh; overflow: hidden; }
+    .container { position: relative; width: 100%; height: 100%; }
+    video {
+      position: absolute; top: 0; left: 0;
+      width: 100%; height: 100%;
+      object-fit: cover;
+    }
+    canvas {
+      position: absolute; top: 0; left: 0;
+      width: 100%; height: 100%;
+    }
+    #status {
+      color: white; font-family: sans-serif; font-size: 14px;
+      padding: 8px 12px; position: fixed; top: 0; left: 0;
+      background: rgba(0,0,0,0.7); width: 100%;
+      text-align: center; z-index: 10;
+    }
+    #controls {
+      position: fixed; bottom: 20px; left: 50%;
+      transform: translateX(-50%);
+      display: flex; gap: 12px; z-index: 10;
+    }
+    .btn {
+      padding: 10px 20px; border: 2px solid white; border-radius: 20px;
+      background: rgba(0,0,0,0.6); color: white; font-family: sans-serif;
+      font-size: 14px; cursor: pointer;
+    }
+    .btn.active { background: white; color: black; }
+  </style>
+</head>
+<body>
+  <div id="status">Starting...</div>
+  <div class="container">
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas"></canvas>
+  </div>
+  <div id="controls">
+    <button class="btn" id="btn-normal" onclick="switchLens('normal')">Normal</button>
+    <button class="btn active" id="btn-ultrawide" onclick="switchLens('ultrawide')">Ultrawide</button>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const statusEl = document.getElementById('status');
+
+    let personDetector = null;
+    let currentStream = null;
+    let isDetecting = false;
+
+    function resizeCanvas() {
+      canvas.width = canvas.offsetWidth;
+      canvas.height = canvas.offsetHeight;
+    }
+
+    window.addEventListener('resize', () => setTimeout(resizeCanvas, 300));
+
+    function getCoverDimensions() {
+      const screenW = canvas.width;
+      const screenH = canvas.height;
+      const videoW = video.videoWidth;
+      const videoH = video.videoHeight;
+      const screenRatio = screenW / screenH;
+      const videoRatio = videoW / videoH;
+      let drawW, drawH, offsetX, offsetY;
+      if (screenRatio > videoRatio) {
+        drawW = screenW;
+        drawH = screenW / videoRatio;
+        offsetX = 0;
+        offsetY = (screenH - drawH) / 2;
+      } else {
+        drawH = screenH;
+        drawW = screenH * videoRatio;
+        offsetX = (screenW - drawW) / 2;
+        offsetY = 0;
+      }
+      return { drawW, drawH, offsetX, offsetY };
+    }
+
+    async function startCamera(lens) {
+      isDetecting = false;
+      if (currentStream) {
+        currentStream.getTracks().forEach(t => t.stop());
+        currentStream = null;
+      }
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: {
+            facingMode: 'environment',
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
+        });
+        currentStream = stream;
+        video.srcObject = stream;
+        await new Promise(resolve => video.onloadedmetadata = resolve);
+        await new Promise(resolve => {
+          if (video.readyState >= 2) resolve();
+          else video.oncanplay = resolve;
+        });
+        await video.play();
+        resizeCanvas();
+
+        if (lens === 'ultrawide') {
+          const track = stream.getVideoTracks()[0];
+          const capabilities = track.getCapabilities();
+          if (capabilities.zoom) {
+            await track.applyConstraints({
+              advanced: [{ zoom: capabilities.zoom.min }]
+            });
+          }
+        }
+
+        isDetecting = true;
+        detect();
+
+      } catch (err) {
+        statusEl.textContent = 'Camera error: ' + err.message;
+        statusEl.style.background = 'darkred';
+      }
+    }
+
+    async function switchLens(lens) {
+      document.getElementById('btn-normal').classList.toggle('active', lens === 'normal');
+      document.getElementById('btn-ultrawide').classList.toggle('active', lens === 'ultrawide');
+      statusEl.textContent = 'Switching lens...';
+      await startCamera(lens);
+    }
+
+    async function setup() {
+      try {
+        statusEl.textContent = 'Starting camera...';
+        await startCamera('ultrawide');
+
+        statusEl.textContent = 'Loading person detector...';
+        personDetector = await cocoSsd.load({ base: 'mobilenet_v2' });
+
+        statusEl.textContent = 'Running — point at people';
+
+      } catch (err) {
+        statusEl.textContent = 'Setup error: ' + err.message;
+        statusEl.style.background = 'darkred';
+      }
+    }
+
+    async function detect() {
+      if (!isDetecting) return;
+
+      requestAnimationFrame(async () => {
+        if (!isDetecting) return;
+
+        if (personDetector && video.readyState === 4) {
+          try {
+            const { drawW, drawH, offsetX, offsetY } = getCoverDimensions();
+            const scaleX = drawW / video.videoWidth;
+            const scaleY = drawH / video.videoHeight;
+
+            // Draw video frame
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(video, offsetX, offsetY, drawW, drawH);
+
+            // Stage 1 only — detect people, draw boxes
+            const predictions = await personDetector.detect(video);
+            const people = predictions.filter(p => p.class === 'person' && p.score > 0.4);
+
+            for (const person of people) {
+              const [bx, by, bw, bh] = person.bbox;
+
+              // Draw bounding box
+              ctx.strokeStyle = 'lime';
+              ctx.lineWidth = 2;
+              ctx.strokeRect(
+                bx * scaleX + offsetX,
+                by * scaleY + offsetY,
+                bw * scaleX,
+                bh * scaleY
+              );
+
+              // Draw confidence score above box
+              ctx.fillStyle = 'lime';
+              ctx.font = '14px sans-serif';
+              ctx.fillText(
+                `${Math.round(person.score * 100)}%`,
+                bx * scaleX + offsetX + 4,
+                by * scaleY + offsetY - 6
+              );
+            }
+
+            statusEl.textContent = `Running — ${people.length} person${people.length !== 1 ? 's' : ''} detected`;
+
+          } catch(e) {
+            // skip bad frames
+          }
+        }
+
+        if (isDetecting) detect();
+      });
+    }
+
+    setup();
+  </script>
+</body>
+</html>
