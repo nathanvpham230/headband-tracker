@@ -8,27 +8,36 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #000; width: 100vw; height: 100vh; overflow: hidden; }
     .container { position: relative; width: 100%; height: 100%; }
-    video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
-    canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+    video { 
+      position: absolute; top: 0; left: 0; 
+      width: 100%; height: 100%; 
+      object-fit: cover;
+    }
+    canvas { 
+      position: absolute; top: 0; left: 0; 
+      width: 100%; height: 100%;
+    }
     #status {
       color: white; font-family: sans-serif; font-size: 14px;
       padding: 8px 12px; position: fixed; top: 0; left: 0;
-      background: rgba(0,0,0,0.7); width: 100%; text-align: center; z-index: 10;
+      background: rgba(0,0,0,0.7); width: 100%; 
+      text-align: center; z-index: 10;
     }
     #controls {
-      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+      position: fixed; bottom: 20px; left: 50%; 
+      transform: translateX(-50%);
       display: flex; gap: 12px; z-index: 10;
     }
     .btn {
       padding: 10px 20px; border: 2px solid white; border-radius: 20px;
       background: rgba(0,0,0,0.6); color: white; font-family: sans-serif;
-      font-size: 14px; cursor: pointer; transition: all 0.2s;
+      font-size: 14px; cursor: pointer;
     }
     .btn.active { background: white; color: black; }
   </style>
 </head>
 <body>
-  <div id="status">Starting camera...</div>
+  <div id="status">Starting...</div>
   <div class="container">
     <video id="video" autoplay playsinline></video>
     <canvas id="canvas"></canvas>
@@ -38,36 +47,42 @@
     <button class="btn" id="btn-ultrawide" onclick="switchLens('ultrawide')">Ultrawide</button>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js"></script>
   <script>
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
-    const status = document.getElementById('status');
+    const statusEl = document.getElementById('status');
 
-    let currentLens = 'normal';
     let detector = null;
     let currentStream = null;
+    let animFrame = null;
 
+    // Sync canvas resolution to actual display size
     function resizeCanvas() {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
+      canvas.width = canvas.offsetWidth;
+      canvas.height = canvas.offsetHeight;
     }
-    window.addEventListener('resize', resizeCanvas);
-    window.addEventListener('orientationchange', resizeCanvas);
-    resizeCanvas();
+
+    window.addEventListener('resize', () => {
+      setTimeout(resizeCanvas, 300); // wait for orientation to finish
+    });
 
     async function startCamera(lens) {
+      // Stop existing stream
       if (currentStream) {
         currentStream.getTracks().forEach(t => t.stop());
+        currentStream = null;
       }
 
       const constraints = {
         audio: false,
-        video: lens === 'ultrawide'
-          ? { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 }, zoom: 0.5 }
-          : { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+        video: {
+          facingMode: 'environment',
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        }
       };
 
       try {
@@ -75,79 +90,90 @@
         currentStream = stream;
         video.srcObject = stream;
         await new Promise(resolve => video.onloadedmetadata = resolve);
+        await video.play();
         resizeCanvas();
 
+        // Try ultrawide via zoom
         if (lens === 'ultrawide') {
           const track = stream.getVideoTracks()[0];
           const capabilities = track.getCapabilities();
           if (capabilities.zoom) {
-            await track.applyConstraints({ advanced: [{ zoom: capabilities.zoom.min }] });
-            status.textContent = 'Ultrawide lens active';
+            await track.applyConstraints({ 
+              advanced: [{ zoom: capabilities.zoom.min }] 
+            });
+            statusEl.textContent = 'Ultrawide active';
           } else {
-            status.textContent = 'Ultrawide not supported, using wide angle';
+            statusEl.textContent = 'Ultrawide not supported on this browser';
           }
         } else {
-          status.textContent = 'Running! Point camera at a person.';
+          statusEl.textContent = 'Running — point at people';
         }
 
       } catch (err) {
-        status.textContent = 'Camera error: ' + err.message;
-        status.style.background = 'red';
+        statusEl.textContent = 'Camera error: ' + err.message;
+        statusEl.style.background = 'darkred';
       }
     }
 
     async function switchLens(lens) {
-      currentLens = lens;
       document.getElementById('btn-normal').classList.toggle('active', lens === 'normal');
       document.getElementById('btn-ultrawide').classList.toggle('active', lens === 'ultrawide');
-      status.textContent = 'Switching lens...';
+      statusEl.textContent = 'Switching lens...';
       await startCamera(lens);
     }
 
     async function setup() {
       try {
-        status.textContent = 'Requesting camera...';
+        statusEl.textContent = 'Requesting camera...';
         await startCamera('normal');
 
-        status.textContent = 'Loading MoveNet model...';
+        statusEl.textContent = 'Loading pose model...';
         detector = await poseDetection.createDetector(
           poseDetection.SupportedModels.MoveNet,
-          { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING }
+          { 
+            modelType: poseDetection.movenet.modelType.MULTIPOSE_LIGHTNING,
+            enableTracking: true,
+            trackerType: poseDetection.TrackerType.BoundingBox
+          }
         );
 
-        status.textContent = 'Running! Point camera at a person.';
+        statusEl.textContent = 'Running — point at people';
         detect();
 
       } catch (err) {
-        status.textContent = 'Error: ' + err.message;
-        status.style.background = 'red';
+        statusEl.textContent = 'Setup error: ' + err.message;
+        statusEl.style.background = 'darkred';
       }
     }
 
-    async function detect() {
-      if (detector) {
-        const poses = await detector.estimatePoses(video);
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        for (const pose of poses) {
-          drawSkeleton(pose.keypoints);
+    function detect() {
+      animFrame = requestAnimationFrame(async () => {
+        if (detector && video.readyState === 4) {
+          try {
+            const poses = await detector.estimatePoses(video);
+
+            // Draw video frame
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            // Draw skeletons
+            for (const pose of poses) {
+              drawSkeleton(pose.keypoints);
+            }
+
+            // Show person count
+            statusEl.textContent = `Running — ${poses.length} person${poses.length !== 1 ? 's' : ''} detected`;
+
+          } catch(e) {
+            // silently skip bad frames
+          }
         }
-      }
-      requestAnimationFrame(detect);
+        detect();
+      });
     }
 
     function drawSkeleton(keypoints) {
       const scaleX = canvas.width / video.videoWidth;
       const scaleY = canvas.height / video.videoHeight;
-
-      for (const kp of keypoints) {
-        if (kp.score > 0.3) {
-          ctx.beginPath();
-          ctx.arc(kp.x * scaleX, kp.y * scaleY, 6, 0, 2 * Math.PI);
-          ctx.fillStyle = kp.name === 'nose' || kp.name.includes('eye') || kp.name.includes('ear') ? 'red' : 'lime';
-          ctx.fill();
-        }
-      }
 
       const connections = [
         ['left_shoulder', 'right_shoulder'],
@@ -162,6 +188,7 @@
       const kpMap = {};
       for (const kp of keypoints) kpMap[kp.name] = kp;
 
+      // Draw lines first
       ctx.strokeStyle = 'lime';
       ctx.lineWidth = 2;
       for (const [a, b] of connections) {
@@ -171,6 +198,17 @@
           ctx.moveTo(kpA.x * scaleX, kpA.y * scaleY);
           ctx.lineTo(kpB.x * scaleX, kpB.y * scaleY);
           ctx.stroke();
+        }
+      }
+
+      // Draw dots on top
+      for (const kp of keypoints) {
+        if (kp.score > 0.3) {
+          ctx.beginPath();
+          ctx.arc(kp.x * scaleX, kp.y * scaleY, 6, 0, 2 * Math.PI);
+          ctx.fillStyle = ['nose','left_eye','right_eye','left_ear','right_ear']
+            .includes(kp.name) ? 'red' : 'lime';
+          ctx.fill();
         }
       }
     }
