@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Headband Tracker B</title>
+  <title>Headband Tracker B - Head Crop</title>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-fullscreen">
   <style>
@@ -182,24 +182,57 @@
             for (const person of people) {
               const [bx, by, bw, bh] = person.bbox;
 
-              // Draw bounding box
+              const screenX = bx * scaleX + offsetX;
+              const screenY = by * scaleY + offsetY;
+              const screenW = bw * scaleX;
+              const screenH = bh * scaleY;
+
+              // Estimate headband/head region without running pose detection.
+              // This top crop is what the future headband classifier should analyze.
+              const headCropRatio = 0.28;
+              const headPadRatio = 0.08;
+
+              const headX = bx + bw * headPadRatio;
+              const headY = by;
+              const headW = bw * (1 - headPadRatio * 2);
+              const headH = bh * headCropRatio;
+
+              const screenHeadX = headX * scaleX + offsetX;
+              const screenHeadY = headY * scaleY + offsetY;
+              const screenHeadW = headW * scaleX;
+              const screenHeadH = headH * scaleY;
+
+              // Draw full person bounding box
               ctx.strokeStyle = 'lime';
               ctx.lineWidth = 2;
-              ctx.strokeRect(
-                bx * scaleX + offsetX,
-                by * scaleY + offsetY,
-                bw * scaleX,
-                bh * scaleY
-              );
+              ctx.strokeRect(screenX, screenY, screenW, screenH);
+
+              // Draw estimated head/headband crop region
+              ctx.strokeStyle = 'yellow';
+              ctx.lineWidth = 3;
+              ctx.strokeRect(screenHeadX, screenHeadY, screenHeadW, screenHeadH);
+
+              // Draw center point of the head crop for position tracking
+              const headCenterX = screenHeadX + screenHeadW / 2;
+              const headCenterY = screenHeadY + screenHeadH / 2;
+              ctx.fillStyle = 'yellow';
+              ctx.beginPath();
+              ctx.arc(headCenterX, headCenterY, 4, 0, Math.PI * 2);
+              ctx.fill();
 
               // Draw confidence score above box
               ctx.fillStyle = 'lime';
               ctx.font = '14px sans-serif';
               ctx.fillText(
                 `${Math.round(person.score * 100)}%`,
-                bx * scaleX + offsetX + 4,
-                by * scaleY + offsetY - 6
+                screenX + 4,
+                screenY - 6
               );
+
+              // Debug label for the classifier crop
+              ctx.fillStyle = 'yellow';
+              ctx.font = '12px sans-serif';
+              ctx.fillText('head crop', screenHeadX + 4, screenHeadY + 14);
             }
 
             statusEl.textContent = `Running — ${people.length} person${people.length !== 1 ? 's' : ''} detected`;
