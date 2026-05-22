@@ -10,10 +10,10 @@
     .container { position: relative; width: 100%; height: 100%; }
     video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
     canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
-    #status { 
-      color: white; font-family: sans-serif; font-size: 14px; 
-      padding: 8px 12px; position: fixed; top: 0; left: 0; 
-      background: rgba(0,0,0,0.7); width: 100%; text-align: center; z-index: 10; 
+    #status {
+      color: white; font-family: sans-serif; font-size: 14px;
+      padding: 8px 12px; position: fixed; top: 0; left: 0;
+      background: rgba(0,0,0,0.7); width: 100%; text-align: center; z-index: 10;
     }
     #controls {
       position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
@@ -25,22 +25,9 @@
       font-size: 14px; cursor: pointer; transition: all 0.2s;
     }
     .btn.active { background: white; color: black; }
-    #rotate-msg {
-      display: none; position: fixed; top: 0; left: 0;
-      width: 100%; height: 100%; background: #000; color: white;
-      font-family: sans-serif; font-size: 20px; justify-content: center;
-      align-items: center; text-align: center; z-index: 20; padding: 20px;
-    }
-    @media (orientation: portrait) {
-      #rotate-msg { display: flex; }
-      .container { display: none; }
-      #status { display: none; }
-      #controls { display: none; }
-    }
   </style>
 </head>
 <body>
-  <div id="rotate-msg">📱 Please rotate your phone to landscape mode</div>
   <div id="status">Starting camera...</div>
   <div class="container">
     <video id="video" autoplay playsinline></video>
@@ -68,16 +55,14 @@
       canvas.height = window.innerHeight;
     }
     window.addEventListener('resize', resizeCanvas);
+    window.addEventListener('orientationchange', resizeCanvas);
     resizeCanvas();
 
     async function startCamera(lens) {
-      // Stop existing stream
       if (currentStream) {
         currentStream.getTracks().forEach(t => t.stop());
       }
 
-      // ultrawide uses a wider FOV via zoom: 0.5 — not all browsers support it
-      // but on iPhone Safari it works via the advanced camera API
       const constraints = {
         audio: false,
         video: lens === 'ultrawide'
@@ -92,7 +77,6 @@
         await new Promise(resolve => video.onloadedmetadata = resolve);
         resizeCanvas();
 
-        // Try to apply zoom via track constraints (more reliable on iOS)
         if (lens === 'ultrawide') {
           const track = stream.getVideoTracks()[0];
           const capabilities = track.getCapabilities();
@@ -100,10 +84,10 @@
             await track.applyConstraints({ advanced: [{ zoom: capabilities.zoom.min }] });
             status.textContent = 'Ultrawide lens active';
           } else {
-            status.textContent = 'Ultrawide: zoom not supported on this browser, using wide angle';
+            status.textContent = 'Ultrawide not supported, using wide angle';
           }
         } else {
-          status.textContent = 'Normal lens active';
+          status.textContent = 'Running! Point camera at a person.';
         }
 
       } catch (err) {
