@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Headband Tracker</title>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-fullscreen">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #000; width: 100vw; height: 100vh; overflow: hidden; }
@@ -43,8 +45,8 @@
     <canvas id="canvas"></canvas>
   </div>
   <div id="controls">
-    <button class="btn active" id="btn-normal" onclick="switchLens('normal')">Normal</button>
-    <button class="btn" id="btn-ultrawide" onclick="switchLens('ultrawide')">Ultrawide</button>
+    <button class="btn" id="btn-normal" onclick="switchLens('normal')">Normal</button>
+    <button class="btn active" id="btn-ultrawide" onclick="switchLens('ultrawide')">Ultrawide</button>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0/dist/tf.min.js"></script>
@@ -57,24 +59,24 @@
 
     let detector = null;
     let currentStream = null;
-    let animFrame = null;
+    let isDetecting = false;
 
-    // Sync canvas resolution to actual display size
     function resizeCanvas() {
       canvas.width = canvas.offsetWidth;
       canvas.height = canvas.offsetHeight;
     }
 
-    window.addEventListener('resize', () => {
-      setTimeout(resizeCanvas, 300); // wait for orientation to finish
-    });
+    window.addEventListener('resize', () => setTimeout(resizeCanvas, 300));
 
     async function startCamera(lens) {
-      // Stop existing stream
+      isDetecting = false;
+
       if (currentStream) {
         currentStream.getTracks().forEach(t => t.stop());
         currentStream = null;
       }
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       const constraints = {
         audio: false,
@@ -89,11 +91,15 @@
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
         currentStream = stream;
         video.srcObject = stream;
+
         await new Promise(resolve => video.onloadedmetadata = resolve);
+        await new Promise(resolve => {
+          if (video.readyState >= 2) resolve();
+          else video.oncanplay = resolve;
+        });
         await video.play();
         resizeCanvas();
 
-        // Try ultrawide via zoom
         if (lens === 'ultrawide') {
           const track = stream.getVideoTracks()[0];
           const capabilities = track.getCapabilities();
@@ -108,6 +114,9 @@
         } else {
           statusEl.textContent = 'Running — point at people';
         }
+
+        isDetecting = true;
+        detect();
 
       } catch (err) {
         statusEl.textContent = 'Camera error: ' + err.message;
@@ -125,7 +134,7 @@
     async function setup() {
       try {
         statusEl.textContent = 'Requesting camera...';
-        await startCamera('normal');
+        await startCamera('ultrawide');
 
         statusEl.textContent = 'Loading pose model...';
         detector = await poseDetection.createDetector(
@@ -138,7 +147,6 @@
         );
 
         statusEl.textContent = 'Running — point at people';
-        detect();
 
       } catch (err) {
         statusEl.textContent = 'Setup error: ' + err.message;
@@ -146,28 +154,29 @@
       }
     }
 
-    function detect() {
-      animFrame = requestAnimationFrame(async () => {
+    async function detect() {
+      if (!isDetecting) return;
+
+      requestAnimationFrame(async () => {
+        if (!isDetecting) return;
+
         if (detector && video.readyState === 4) {
           try {
             const poses = await detector.estimatePoses(video);
-
-            // Draw video frame
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-            // Draw skeletons
             for (const pose of poses) {
               drawSkeleton(pose.keypoints);
             }
 
-            // Show person count
             statusEl.textContent = `Running — ${poses.length} person${poses.length !== 1 ? 's' : ''} detected`;
 
           } catch(e) {
-            // silently skip bad frames
+            // skip bad frames
           }
         }
-        detect();
+
+        if (isDetecting) detect();
       });
     }
 
@@ -188,7 +197,6 @@
       const kpMap = {};
       for (const kp of keypoints) kpMap[kp.name] = kp;
 
-      // Draw lines first
       ctx.strokeStyle = 'lime';
       ctx.lineWidth = 2;
       for (const [a, b] of connections) {
@@ -201,7 +209,6 @@
         }
       }
 
-      // Draw dots on top
       for (const kp of keypoints) {
         if (kp.score > 0.3) {
           ctx.beginPath();
