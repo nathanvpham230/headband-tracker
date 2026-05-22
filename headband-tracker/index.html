@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Headband Tracker</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; }
+    container { position: relative; }
+    video { display: block; }
+    canvas { position: absolute; top: 0; left: 0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+
+    async function setup() {
+      // Start camera
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' }, // back camera on iPhone
+        audio: false
+      });
+      video.srcObject = stream;
+
+      await new Promise(resolve => video.onloadedmetadata = resolve);
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+
+      // Load MoveNet
+      const detector = await poseDetection.createDetector(
+        poseDetection.SupportedModels.MoveNet,
+        { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING }
+      );
+
+      detect(detector);
+    }
+
+    async function detect(detector) {
+      const poses = await detector.estimatePoses(video);
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(video, 0, 0);
+
+      for (const pose of poses) {
+        drawSkeleton(pose.keypoints);
+      }
+
+      requestAnimationFrame(() => detect(detector));
+    }
+
+    function drawSkeleton(keypoints) {
+      // Draw all keypoints
+      for (const kp of keypoints) {
+        if (kp.score > 0.3) {
+          ctx.beginPath();
+          ctx.arc(kp.x, kp.y, 5, 0, 2 * Math.PI);
+          // Head keypoints in red, rest in green
+          ctx.fillStyle = kp.name === 'nose' || kp.name.includes('eye') || kp.name.includes('ear') ? 'red' : 'lime';
+          ctx.fill();
+        }
+      }
+
+      // Draw connections
+      const connections = [
+        ['left_shoulder', 'right_shoulder'],
+        ['left_shoulder', 'left_elbow'], ['left_elbow', 'left_wrist'],
+        ['right_shoulder', 'right_elbow'], ['right_elbow', 'right_wrist'],
+        ['left_shoulder', 'left_hip'], ['right_shoulder', 'right_hip'],
+        ['left_hip', 'right_hip'],
+        ['left_hip', 'left_knee'], ['left_knee', 'left_ankle'],
+        ['right_hip', 'right_knee'], ['right_knee', 'right_ankle']
+      ];
+
+      const kpMap = {};
+      for (const kp of keypoints) kpMap[kp.name] = kp;
+
+      ctx.strokeStyle = 'lime';
+      ctx.lineWidth = 2;
+      for (const [a, b] of connections) {
+        const kpA = kpMap[a], kpB = kpMap[b];
+        if (kpA?.score > 0.3 && kpB?.score > 0.3) {
+          ctx.beginPath();
+          ctx.moveTo(kpA.x, kpA.y);
+          ctx.lineTo(kpB.x, kpB.y);
+          ctx.stroke();
+        }
+      }
+    }
+
+    setup();
+  </script>
+</body>
+</html>
