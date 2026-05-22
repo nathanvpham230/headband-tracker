@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Headband Tracker</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; flex-direction: column; }
+    .container { position: relative; }
+    video { display: block; width: 100vw; height: auto; }
+    canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+    #status { color: white; font-family: sans-serif; font-size: 16px; padding: 10px; position: fixed; top: 0; left: 0; background: rgba(0,0,0,0.7); width: 100%; text-align: center; z-index: 10; }
+  </style>
+</head>
+<body>
+  <div id="status">Starting camera...</div>
+  <div class="container">
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const status = document.getElementById('status');
+
+    async function setup() {
+      try {
+        status.textContent = 'Requesting camera...';
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment' },
+          audio: false
+        });
+        video.srcObject = stream;
+        status.textContent = 'Camera started, loading model...';
+
+        await new Promise(resolve => video.onloadedmetadata = resolve);
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+
+        status.textContent = 'Loading MoveNet model...';
+        const detector = await poseDetection.createDetector(
+          poseDetection.SupportedModels.MoveNet,
+          { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING }
+        );
+
+        status.textContent = 'Running! Point camera at a person.';
+        detect(detector);
+
+      } catch (err) {
+        status.textContent = 'Error: ' + err.message;
+        status.style.background = 'red';
+      }
+    }
+
+    async function detect(detector) {
+      const poses = await detector.estimatePoses(video);
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      for (const pose of poses) {
+        drawSkeleton(pose.keypoints);
+      }
+
+      requestAnimationFrame(() => detect(detector));
+    }
+
+    function drawSkeleton(keypoints) {
+      for (const kp of keypoints) {
+        if (kp.score > 0.3) {
+          ctx.beginPath();
+          ctx.arc(kp.x, kp.y, 5, 0, 2 * Math.PI);
+          ctx.fillStyle = kp.name === 'nose' || kp.name.includes('eye') || kp.name.includes('ear') ? 'red' : 'lime';
+          ctx.fill();
+        }
+      }
+
+      const connections = [
+        ['left_shoulder', 'right_shoulder'],
+        ['left_shoulder', 'left_elbow'], ['left_elbow', 'left_wrist'],
+        ['right_shoulder', 'right_elbow'], ['right_elbow', 'right_wrist'],
+        ['left_shoulder', 'left_hip'], ['right_shoulder', 'right_hip'],
+        ['left_hip', 'right_hip'],
+        ['left_hip', 'left_knee'], ['left_knee', 'left_ankle'],
+        ['right_hip', 'right_knee'], ['right_knee', 'right_ankle']
+      ];
+
+      const kpMap = {};
+      for (const kp of keypoints) kpMap[kp.name] = kp;
+
+      ctx.strokeStyle = 'lime';
+      ctx.lineWidth = 2;
+      for (const [a, b] of connections) {
+        const kpA = kpMap[a], kpB = kpMap[b];
+        if (kpA?.score > 0.3 && kpB?.score > 0.3) {
+          ctx.beginPath();
+          ctx.moveTo(kpA.x, kpA.y);
+          ctx.lineTo(kpB.x, kpB.y);
+          ctx.stroke();
+        }
+      }
+    }
+
+    setup();
+  </script>
+</body>
+</html>
