@@ -3,53 +3,58 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>Headband Tracker - Skeleton Pose</title>
+  <title>Headband Tracker - Detection Toggle</title>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { background: #000; width: 100vw; height: 100vh; overflow: hidden; }
     .container { position: relative; width: 100%; height: 100%; }
-    video {
-      position: absolute; inset: 0;
-      width: 100%; height: 100%;
-      object-fit: cover;
-      transform: translateZ(0);
-    }
-    canvas {
-      position: absolute; inset: 0;
-      width: 100%; height: 100%;
-      z-index: 2;
-    }
+    video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: translateZ(0); }
+    canvas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 2; }
     #status {
       color: white; font-family: Arial, sans-serif; font-size: 14px;
       padding: 8px 12px; position: fixed; top: 0; left: 0;
-      background: rgba(0,0,0,0.72); width: 100%;
-      text-align: center; z-index: 10;
+      background: rgba(0,0,0,0.72); width: 100%; text-align: center; z-index: 10;
+    }
+    #debug {
+      position: fixed; right: 8px; top: 42px; z-index: 10;
+      color: white; font: 12px Arial, sans-serif;
+      background: rgba(0,0,0,0.55); padding: 6px 8px; border-radius: 8px;
+      max-width: 50vw;
     }
     #controls {
-      position: fixed; bottom: 18px; left: 50%;
-      transform: translateX(-50%);
+      position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
       display: flex; gap: 8px; z-index: 10; flex-wrap: wrap;
-      justify-content: center; width: min(96vw, 720px);
+      justify-content: center; width: min(96vw, 760px);
+      font-family: Arial, sans-serif;
     }
-    .btn {
+    .btn, select, .menu-btn {
       padding: 9px 14px; border: 2px solid white; border-radius: 20px;
       background: rgba(0,0,0,0.62); color: white; font-family: Arial, sans-serif;
       font-size: 13px; cursor: pointer; white-space: nowrap;
     }
     .btn.active { background: white; color: black; }
-    #debug {
-      position: fixed; right: 8px; top: 42px; z-index: 10;
-      color: white; font: 12px Arial, sans-serif;
-      background: rgba(0,0,0,0.55); padding: 6px 8px; border-radius: 8px;
-      max-width: 44vw;
+    select { appearance: none; }
+    .draw-menu-wrap { position: relative; }
+    #draw-menu {
+      display: none; position: absolute; bottom: 46px; right: 0;
+      width: 240px; padding: 10px; border: 1px solid rgba(255,255,255,0.5);
+      border-radius: 12px; background: rgba(0,0,0,0.86); color: white;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.45);
     }
+    #draw-menu.open { display: block; }
+    #draw-menu label {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 4px; font-size: 13px;
+    }
+    #draw-menu input { width: 16px; height: 16px; }
+    #draw-menu .hint { opacity: 0.75; font-size: 11px; padding: 4px 4px 8px; }
   </style>
 </head>
 <body>
   <div id="status">Starting...</div>
-  <div id="debug">MoveNet MultiPose</div>
+  <div id="debug">Loading...</div>
   <div class="container">
     <video id="video" autoplay playsinline muted></video>
     <canvas id="canvas"></canvas>
@@ -57,11 +62,29 @@
   <div id="controls">
     <button class="btn" id="btn-normal" onclick="switchLens('normal')">Normal</button>
     <button class="btn active" id="btn-ultrawide" onclick="switchLens('ultrawide')">Ultrawide</button>
-    <button class="btn active" id="btn-skeleton" onclick="toggleSkeleton()">Skeleton On</button>
-    <button class="btn active" id="btn-crop" onclick="toggleCrops()">Crops On</button>
+
+    <select id="mode-select" onchange="setDetectionMode(this.value)">
+      <option value="person">Person Detection</option>
+      <option value="skeleton">Skeleton Pose</option>
+    </select>
+
+    <div class="draw-menu-wrap">
+      <button class="menu-btn" onclick="toggleDrawMenu()">Draw Options ▾</button>
+      <div id="draw-menu">
+        <div class="hint">Toggle overlays on the camera view.</div>
+        <label><input type="checkbox" id="drawPersonBoxes" checked onchange="syncDrawOptions()"> Person boxes</label>
+        <label><input type="checkbox" id="drawConfidence" checked onchange="syncDrawOptions()"> Confidence labels</label>
+        <label><input type="checkbox" id="drawSkeletonLines" checked onchange="syncDrawOptions()"> Skeleton lines</label>
+        <label><input type="checkbox" id="drawKeypoints" checked onchange="syncDrawOptions()"> Keypoints</label>
+        <label><input type="checkbox" id="drawPoseLabels" checked onchange="syncDrawOptions()"> Pose labels</label>
+        <label><input type="checkbox" id="drawHeadCrops" checked onchange="syncDrawOptions()"> Head crop boxes</label>
+        <label><input type="checkbox" id="drawCropCenters" checked onchange="syncDrawOptions()"> Crop centers</label>
+      </div>
+    </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js"></script>
 
   <script>
@@ -71,18 +94,29 @@
     const statusEl = document.getElementById('status');
     const debugEl = document.getElementById('debug');
 
+    let personDetector = null;
     let poseDetector = null;
     let currentStream = null;
     let isDetecting = false;
-    let showSkeleton = true;
-    let showCrops = true;
+    let detectionMode = 'person';
     let frameCount = 0;
     let lastFpsTime = performance.now();
     let fps = 0;
 
     const KEYPOINT_SCORE_MIN = 0.22;
     const POSE_SCORE_MIN = 0.18;
+    const PERSON_SCORE_MIN = 0.40;
     const HEAD_CROP_SIZE = 224;
+
+    const draw = {
+      personBoxes: true,
+      confidence: true,
+      skeletonLines: true,
+      keypoints: true,
+      poseLabels: true,
+      headCrops: true,
+      cropCenters: true
+    };
 
     const EDGES = [
       ['nose', 'left_eye'], ['nose', 'right_eye'],
@@ -100,7 +134,6 @@
       canvas.width = canvas.offsetWidth;
       canvas.height = canvas.offsetHeight;
     }
-
     window.addEventListener('resize', () => setTimeout(resizeCanvas, 250));
 
     function getCoverDimensions() {
@@ -111,7 +144,6 @@
       const screenRatio = screenW / screenH;
       const videoRatio = videoW / videoH;
       let drawW, drawH, offsetX, offsetY;
-
       if (screenRatio > videoRatio) {
         drawW = screenW;
         drawH = screenW / videoRatio;
@@ -124,6 +156,15 @@
         offsetY = 0;
       }
       return { drawW, drawH, offsetX, offsetY };
+    }
+
+    function toScreenRect(rect, dims) {
+      return {
+        x: rect.x * dims.drawW / video.videoWidth + dims.offsetX,
+        y: rect.y * dims.drawH / video.videoHeight + dims.offsetY,
+        w: rect.w * dims.drawW / video.videoWidth,
+        h: rect.h * dims.drawH / video.videoHeight
+      };
     }
 
     function toScreenPoint(kp, dims) {
@@ -141,13 +182,19 @@
       return map;
     }
 
-    function estimateHeadCrop(pose) {
+    function estimateHeadCropFromPerson(person) {
+      const [bx, by, bw, bh] = person.bbox;
+      const cropW = bw * 0.58;
+      const cropH = bh * 0.28;
+      const x = Math.max(0, Math.min(video.videoWidth - cropW, bx + bw * 0.21));
+      const y = Math.max(0, Math.min(video.videoHeight - cropH, by + bh * 0.02));
+      return { x, y, w: cropW, h: cropH, centerX: x + cropW / 2, centerY: y + cropH / 2 };
+    }
+
+    function estimateHeadCropFromPose(pose) {
       const kp = keypointMap(pose);
       const headNames = ['nose', 'left_eye', 'right_eye', 'left_ear', 'right_ear'];
-      const headPts = headNames
-        .map(name => kp[name])
-        .filter(p => p && (p.score || 0) >= KEYPOINT_SCORE_MIN);
-
+      const headPts = headNames.map(name => kp[name]).filter(p => p && (p.score || 0) >= KEYPOINT_SCORE_MIN);
       if (headPts.length === 0) return null;
 
       let minX = Math.min(...headPts.map(p => p.x));
@@ -160,9 +207,7 @@
         .filter(p => p && (p.score || 0) >= KEYPOINT_SCORE_MIN);
 
       let shoulderWidth = 0;
-      if (shoulderPts.length === 2) {
-        shoulderWidth = Math.abs(shoulderPts[0].x - shoulderPts[1].x);
-      }
+      if (shoulderPts.length === 2) shoulderWidth = Math.abs(shoulderPts[0].x - shoulderPts[1].x);
 
       const rawHeadW = Math.max(maxX - minX, 24);
       const cropW = Math.max(rawHeadW * 2.3, shoulderWidth * 0.48, 96);
@@ -172,85 +217,127 @@
 
       let x = centerX - cropW / 2;
       let y = centerY - cropH * 0.42;
-
       x = Math.max(0, Math.min(video.videoWidth - cropW, x));
       y = Math.max(0, Math.min(video.videoHeight - cropH, y));
-
       return { x, y, w: cropW, h: cropH, centerX, centerY };
+    }
+
+    function drawPersonBox(person, dims) {
+      const [bx, by, bw, bh] = person.bbox;
+      const rect = toScreenRect({ x: bx, y: by, w: bw, h: bh }, dims);
+      if (draw.personBoxes) {
+        ctx.strokeStyle = 'lime';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+      }
+      if (draw.confidence) {
+        ctx.fillStyle = 'lime';
+        ctx.font = '14px Arial';
+        ctx.fillText(`${Math.round(person.score * 100)}%`, rect.x + 4, rect.y - 6);
+      }
     }
 
     function drawSkeleton(pose, dims, labelIndex) {
       const map = keypointMap(pose);
-
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = 'rgba(0,255,80,0.9)';
-      for (const [a, b] of EDGES) {
-        const p1 = map[a];
-        const p2 = map[b];
-        if (!p1 || !p2) continue;
-        if ((p1.score || 0) < KEYPOINT_SCORE_MIN || (p2.score || 0) < KEYPOINT_SCORE_MIN) continue;
-        const s1 = toScreenPoint(p1, dims);
-        const s2 = toScreenPoint(p2, dims);
-        ctx.beginPath();
-        ctx.moveTo(s1.x, s1.y);
-        ctx.lineTo(s2.x, s2.y);
-        ctx.stroke();
+      if (draw.skeletonLines) {
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = 'rgba(0,255,80,0.9)';
+        for (const [a, b] of EDGES) {
+          const p1 = map[a];
+          const p2 = map[b];
+          if (!p1 || !p2) continue;
+          if ((p1.score || 0) < KEYPOINT_SCORE_MIN || (p2.score || 0) < KEYPOINT_SCORE_MIN) continue;
+          const s1 = toScreenPoint(p1, dims);
+          const s2 = toScreenPoint(p2, dims);
+          ctx.beginPath();
+          ctx.moveTo(s1.x, s1.y);
+          ctx.lineTo(s2.x, s2.y);
+          ctx.stroke();
+        }
       }
 
-      for (const kp of pose.keypoints) {
-        if ((kp.score || 0) < KEYPOINT_SCORE_MIN) continue;
-        const p = toScreenPoint(kp, dims);
-        const isHead = ['nose', 'left_eye', 'right_eye', 'left_ear', 'right_ear'].includes(kp.name);
-        ctx.fillStyle = isHead ? 'red' : 'lime';
+      if (draw.keypoints) {
+        for (const kp of pose.keypoints) {
+          if ((kp.score || 0) < KEYPOINT_SCORE_MIN) continue;
+          const p = toScreenPoint(kp, dims);
+          const isHead = ['nose', 'left_eye', 'right_eye', 'left_ear', 'right_ear'].includes(kp.name);
+          ctx.fillStyle = isHead ? 'red' : 'lime';
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, isHead ? 5 : 4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      if (draw.poseLabels) {
+        const nose = map.nose;
+        if (nose && (nose.score || 0) >= KEYPOINT_SCORE_MIN) {
+          const n = toScreenPoint(nose, dims);
+          ctx.font = 'bold 14px Arial';
+          ctx.fillStyle = 'white';
+          ctx.strokeStyle = 'black';
+          ctx.lineWidth = 4;
+          ctx.strokeText(`Pose ${labelIndex}`, n.x + 8, n.y - 8);
+          ctx.fillText(`Pose ${labelIndex}`, n.x + 8, n.y - 8);
+        }
+      }
+    }
+
+    function drawHeadCrop(crop, dims, label) {
+      const rect = toScreenRect(crop, dims);
+      if (draw.headCrops) {
+        ctx.strokeStyle = 'yellow';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+        ctx.font = '12px Arial';
+        ctx.fillStyle = 'yellow';
+        ctx.fillText(label || 'headband crop', rect.x + 4, rect.y + 14);
+      }
+      if (draw.cropCenters) {
+        ctx.fillStyle = 'yellow';
         ctx.beginPath();
-        ctx.arc(p.x, p.y, isHead ? 5 : 4, 0, Math.PI * 2);
+        ctx.arc(rect.x + rect.w / 2, rect.y + rect.h / 2, 4, 0, Math.PI * 2);
         ctx.fill();
       }
-
-      const nose = map.nose;
-      if (nose && (nose.score || 0) >= KEYPOINT_SCORE_MIN) {
-        const n = toScreenPoint(nose, dims);
-        ctx.font = 'bold 14px Arial';
-        ctx.fillStyle = 'white';
-        ctx.strokeStyle = 'black';
-        ctx.lineWidth = 4;
-        ctx.strokeText(`Pose ${labelIndex}`, n.x + 8, n.y - 8);
-        ctx.fillText(`Pose ${labelIndex}`, n.x + 8, n.y - 8);
-      }
     }
 
-    function drawHeadCrop(crop, dims) {
-      const sx = crop.x * dims.drawW / video.videoWidth + dims.offsetX;
-      const sy = crop.y * dims.drawH / video.videoHeight + dims.offsetY;
-      const sw = crop.w * dims.drawW / video.videoWidth;
-      const sh = crop.h * dims.drawH / video.videoHeight;
-
-      ctx.strokeStyle = 'yellow';
-      ctx.lineWidth = 3;
-      ctx.strokeRect(sx, sy, sw, sh);
-
-      ctx.fillStyle = 'yellow';
-      ctx.beginPath();
-      ctx.arc(sx + sw / 2, sy + sh / 2, 4, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.font = '12px Arial';
-      ctx.fillStyle = 'yellow';
-      ctx.fillText('headband crop', sx + 4, sy + 14);
+    function toggleDrawMenu() {
+      document.getElementById('draw-menu').classList.toggle('open');
     }
 
-    function toggleSkeleton() {
-      showSkeleton = !showSkeleton;
-      const btn = document.getElementById('btn-skeleton');
-      btn.classList.toggle('active', showSkeleton);
-      btn.textContent = showSkeleton ? 'Skeleton On' : 'Skeleton Off';
+    function syncDrawOptions() {
+      draw.personBoxes = document.getElementById('drawPersonBoxes').checked;
+      draw.confidence = document.getElementById('drawConfidence').checked;
+      draw.skeletonLines = document.getElementById('drawSkeletonLines').checked;
+      draw.keypoints = document.getElementById('drawKeypoints').checked;
+      draw.poseLabels = document.getElementById('drawPoseLabels').checked;
+      draw.headCrops = document.getElementById('drawHeadCrops').checked;
+      draw.cropCenters = document.getElementById('drawCropCenters').checked;
     }
 
-    function toggleCrops() {
-      showCrops = !showCrops;
-      const btn = document.getElementById('btn-crop');
-      btn.classList.toggle('active', showCrops);
-      btn.textContent = showCrops ? 'Crops On' : 'Crops Off';
+    async function setDetectionMode(mode) {
+      detectionMode = mode;
+      statusEl.textContent = mode === 'person' ? 'Switched to person detection' : 'Switched to skeleton pose';
+      if (mode === 'person' && !personDetector) await loadPersonDetector();
+      if (mode === 'skeleton' && !poseDetector) await loadPoseDetector();
+    }
+
+    async function loadPersonDetector() {
+      if (personDetector) return;
+      statusEl.textContent = 'Loading COCO-SSD person detector...';
+      personDetector = await cocoSsd.load({ base: 'mobilenet_v2' });
+    }
+
+    async function loadPoseDetector() {
+      if (poseDetector) return;
+      statusEl.textContent = 'Loading MoveNet MultiPose...';
+      poseDetector = await poseDetection.createDetector(
+        poseDetection.SupportedModels.MoveNet,
+        {
+          modelType: poseDetection.movenet.modelType.MULTIPOSE_LIGHTNING,
+          enableTracking: true,
+          trackerType: poseDetection.TrackerType.BoundingBox
+        }
+      );
     }
 
     async function startCamera(lens) {
@@ -271,23 +358,17 @@
             frameRate: { ideal: 30, max: 30 }
           }
         });
-
         currentStream = stream;
         video.srcObject = stream;
         await new Promise(resolve => video.onloadedmetadata = resolve);
-        await new Promise(resolve => {
-          if (video.readyState >= 2) resolve();
-          else video.oncanplay = resolve;
-        });
+        await new Promise(resolve => { if (video.readyState >= 2) resolve(); else video.oncanplay = resolve; });
         await video.play();
         resizeCanvas();
 
         if (lens === 'ultrawide') {
           const track = stream.getVideoTracks()[0];
           const capabilities = track.getCapabilities ? track.getCapabilities() : {};
-          if (capabilities.zoom) {
-            await track.applyConstraints({ advanced: [{ zoom: capabilities.zoom.min }] });
-          }
+          if (capabilities.zoom) await track.applyConstraints({ advanced: [{ zoom: capabilities.zoom.min }] });
         }
 
         isDetecting = true;
@@ -310,17 +391,7 @@
         statusEl.textContent = 'Loading TensorFlow backend...';
         await tf.setBackend('webgl');
         await tf.ready();
-
-        statusEl.textContent = 'Loading MoveNet MultiPose...';
-        poseDetector = await poseDetection.createDetector(
-          poseDetection.SupportedModels.MoveNet,
-          {
-            modelType: poseDetection.movenet.modelType.MULTIPOSE_LIGHTNING,
-            enableTracking: true,
-            trackerType: poseDetection.TrackerType.BoundingBox
-          }
-        );
-
+        await loadPersonDetector();
         statusEl.textContent = 'Starting camera...';
         await startCamera('ultrawide');
       } catch (err) {
@@ -330,7 +401,7 @@
     }
 
     async function detectLoop() {
-      if (!isDetecting || !poseDetector) return;
+      if (!isDetecting) return;
 
       requestAnimationFrame(async () => {
         if (!isDetecting || video.readyState < 4) {
@@ -343,26 +414,38 @@
           ctx.clearRect(0, 0, canvas.width, canvas.height);
           ctx.drawImage(video, dims.offsetX, dims.offsetY, dims.drawW, dims.drawH);
 
-          const poses = await poseDetector.estimatePoses(video, {
-            maxPoses: 15,
-            flipHorizontal: false
-          });
-
-          const validPoses = poses.filter(p => (p.score || 0) >= POSE_SCORE_MIN);
+          let count = 0;
           let cropCount = 0;
 
-          validPoses.forEach((pose, i) => {
-            if (showSkeleton) drawSkeleton(pose, dims, i + 1);
-            const crop = estimateHeadCrop(pose);
-            if (crop) {
-              cropCount++;
-              if (showCrops) drawHeadCrop(crop, dims);
-
-              // Later classifier integration point:
-              // const cropTensor = makeHeadCropTensor(crop);
-              // const result = await headbandClassifier.predict(cropTensor);
+          if (detectionMode === 'person') {
+            if (!personDetector) await loadPersonDetector();
+            const predictions = await personDetector.detect(video);
+            const people = predictions.filter(p => p.class === 'person' && p.score >= PERSON_SCORE_MIN);
+            count = people.length;
+            for (const person of people) {
+              drawPersonBox(person, dims);
+              const crop = estimateHeadCropFromPerson(person);
+              if (crop) {
+                cropCount++;
+                drawHeadCrop(crop, dims, 'box crop');
+              }
             }
-          });
+            statusEl.textContent = `Person mode — ${count} person${count !== 1 ? 's' : ''}, ${cropCount} crop${cropCount !== 1 ? 's' : ''}`;
+          } else {
+            if (!poseDetector) await loadPoseDetector();
+            const poses = await poseDetector.estimatePoses(video, { maxPoses: 15, flipHorizontal: false });
+            const validPoses = poses.filter(p => (p.score || 0) >= POSE_SCORE_MIN);
+            count = validPoses.length;
+            validPoses.forEach((pose, i) => {
+              drawSkeleton(pose, dims, i + 1);
+              const crop = estimateHeadCropFromPose(pose);
+              if (crop) {
+                cropCount++;
+                drawHeadCrop(crop, dims, 'pose crop');
+              }
+            });
+            statusEl.textContent = `Skeleton mode — ${count} pose${count !== 1 ? 's' : ''}, ${cropCount} crop${cropCount !== 1 ? 's' : ''}`;
+          }
 
           frameCount++;
           const now = performance.now();
@@ -371,9 +454,7 @@
             frameCount = 0;
             lastFpsTime = now;
           }
-
-          statusEl.textContent = `Running — ${validPoses.length} pose${validPoses.length !== 1 ? 's' : ''}, ${cropCount} crop${cropCount !== 1 ? 's' : ''}`;
-          debugEl.textContent = `MoveNet MultiPose Lightning | FPS ~${fps}`;
+          debugEl.textContent = `${detectionMode === 'person' ? 'COCO-SSD person boxes' : 'MoveNet MultiPose Lightning'} | FPS ~${fps}`;
         } catch (err) {
           statusEl.textContent = 'Detection warning: ' + err.message;
         }
@@ -382,8 +463,6 @@
       });
     }
 
-    // Converts a pose-derived head crop into a normalized 224x224 tensor.
-    // Keep this for the Roboflow/TF.js classifier integration step.
     function makeHeadCropTensor(crop) {
       return tf.tidy(() => {
         const frame = tf.browser.fromPixels(video);
