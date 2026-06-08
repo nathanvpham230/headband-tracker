@@ -84,6 +84,27 @@
     </div>
 
     <div class="section">
+      <div class="section-title">Performance</div>
+      <div class="slider-row">
+        <div class="slider-head">
+          <span>Detect every</span>
+          <span class="value-pill"><span id="detect-frame-label">1</span> frame<span id="detect-frame-plural"></span></span>
+        </div>
+        <input type="range" id="detect-frame-slider" min="1" max="10" step="1" value="1" oninput="setDetectEveryFrames(this.value)">
+        <div class="hint">Higher values save battery by running AI less often.</div>
+      </div>
+
+      <div class="slider-row">
+        <div class="slider-head">
+          <span>Resolution</span>
+          <span class="value-pill"><span id="resolution-label">720p</span></span>
+        </div>
+        <input type="range" id="resolution-slider" min="0" max="2" step="1" value="1" oninput="setResolutionPreset(this.value)">
+        <div class="hint">Lower resolution saves battery. 720p is the recommended default.</div>
+      </div>
+    </div>
+
+    <div class="section">
       <div class="section-title">Draw Overlays</div>
       <label class="option"><input type="checkbox" id="drawPersonBoxes" checked onchange="syncDrawOptions()"> Person boxes</label>
       <label class="option"><input type="checkbox" id="drawConfidence" checked onchange="syncDrawOptions()"> Confidence labels</label>
@@ -113,6 +134,16 @@
     let isDetecting = false;
     let detectionMode = 'person';
     let currentLens = 'ultrawide';
+    let detectEveryFrames = 1;
+    let detectFrameCounter = 0;
+    let resolutionPresetIndex = 1;
+    const RESOLUTION_PRESETS = [
+      { label: '480p', width: 854, height: 480 },
+      { label: '720p', width: 1280, height: 720 },
+      { label: '1080p', width: 1920, height: 1080 }
+    ];
+    let lastPeople = [];
+    let lastPoses = [];
     let frameCount = 0;
     let lastFpsTime = performance.now();
     let fps = 0;
@@ -314,6 +345,47 @@
       }
     }
 
+    function setDetectEveryFrames(value) {
+      detectEveryFrames = Math.max(1, Math.min(10, Number(value) || 1));
+      document.getElementById('detect-frame-label').textContent = detectEveryFrames;
+      document.getElementById('detect-frame-plural').textContent = detectEveryFrames === 1 ? '' : 's';
+    }
+
+    async function setResolutionPreset(value) {
+      resolutionPresetIndex = Math.max(0, Math.min(RESOLUTION_PRESETS.length - 1, Number(value) || 0));
+      const preset = RESOLUTION_PRESETS[resolutionPresetIndex];
+      document.getElementById('resolution-label').textContent = preset.label;
+      if (currentStream) {
+        statusEl.textContent = `Switching to ${preset.label}...`;
+        await startCamera(currentLens);
+      }
+    }
+
+    function drawCachedDetections(dims) {
+      let cropCount = 0;
+      if (detectionMode === 'person') {
+        for (const person of lastPeople) {
+          drawPersonBox(person, dims);
+          const crop = estimateHeadCropFromPerson(person);
+          if (crop) {
+            cropCount++;
+            drawHeadCrop(crop, dims, 'box crop');
+          }
+        }
+        return { count: lastPeople.length, cropCount };
+      }
+
+      lastPoses.forEach((pose, i) => {
+        drawSkeleton(pose, dims, i + 1);
+        const crop = estimateHeadCropFromPose(pose);
+        if (crop) {
+          cropCount++;
+          drawHeadCrop(crop, dims, 'pose crop');
+        }
+      });
+      return { count: lastPoses.length, cropCount };
+    }
+
     function toggleDrawer() {
       const drawer = document.getElementById('drawer');
       const tab = document.getElementById('drawer-tab');
@@ -372,14 +444,17 @@
         currentStream = null;
       }
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      lastPeople = [];
+      lastPoses = [];
+      detectFrameCounter = 0;
 
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: false,
           video: {
             facingMode: 'environment',
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
+            width: { ideal: RESOLUTION_PRESETS[resolutionPresetIndex].width },
+            height: { ideal: RESOLUTION_PRESETS[resolutionPresetIndex].height },
             frameRate: { ideal: 30, max: 30 }
           }
         });
@@ -439,39 +514,29 @@
           ctx.clearRect(0, 0, canvas.width, canvas.height);
           ctx.drawImage(video, dims.offsetX, dims.offsetY, dims.drawW, dims.drawH);
 
-          let count = 0;
-          let cropCount = 0;
+          const shouldDetectThisFrame = (detectFrameCounter % detectEveryFrames) === 0;
+          detectFrameCounter++;
 
-          if (detectionMode === 'person') {
-            if (!personDetector) await loadPersonDetector();
-            const predictions = await personDetector.detect(video);
-            const people = predictions.filter(p => p.class === 'person' && p.score >= PERSON_SCORE_MIN);
-            count = people.length;
-            for (const person of people) {
-              drawPersonBox(person, dims);
-              const crop = estimateHeadCropFromPerson(person);
-              if (crop) {
-                cropCount++;
-                drawHeadCrop(crop, dims, 'box crop');
-              }
+          if (shouldDetectThisFrame) {
+            if (detectionMode === 'person') {
+              if (!personDetector) await loadPersonDetector();
+              const predictions = await personDetector.detect(video);
+              lastPeople = predictions.filter(p => p.class === 'person' && p.score >= PERSON_SCORE_MIN);
+              lastPoses = [];
+            } else {
+              if (!poseDetector) await loadPoseDetector();
+              const poses = await poseDetector.estimatePoses(video, { maxPoses: 15, flipHorizontal: false });
+              lastPoses = poses.filter(p => (p.score || 0) >= POSE_SCORE_MIN);
+              lastPeople = [];
             }
-            statusEl.textContent = `Person mode — ${count} person${count !== 1 ? 's' : ''}, ${cropCount} crop${cropCount !== 1 ? 's' : ''}`;
-          } else {
-            if (!poseDetector) await loadPoseDetector();
-            const poses = await poseDetector.estimatePoses(video, { maxPoses: 15, flipHorizontal: false });
-            const validPoses = poses.filter(p => (p.score || 0) >= POSE_SCORE_MIN);
-            count = validPoses.length;
-            validPoses.forEach((pose, i) => {
-              drawSkeleton(pose, dims, i + 1);
-              const crop = estimateHeadCropFromPose(pose);
-              if (crop) {
-                cropCount++;
-                drawHeadCrop(crop, dims, 'pose crop');
-              }
-            });
-            statusEl.textContent = `Skeleton mode — ${count} pose${count !== 1 ? 's' : ''}, ${cropCount} crop${cropCount !== 1 ? 's' : ''}`;
           }
 
+          const { count, cropCount } = drawCachedDetections(dims);
+          if (detectionMode === 'person') {
+            statusEl.textContent = `Person mode — ${count} person${count !== 1 ? 's' : ''}, ${cropCount} crop${cropCount !== 1 ? 's' : ''}`;
+          } else {
+            statusEl.textContent = `Skeleton mode — ${count} pose${count !== 1 ? 's' : ''}, ${cropCount} crop${cropCount !== 1 ? 's' : ''}`;
+          }
           frameCount++;
           const now = performance.now();
           if (now - lastFpsTime >= 1000) {
@@ -479,7 +544,7 @@
             frameCount = 0;
             lastFpsTime = now;
           }
-          debugEl.textContent = `${detectionMode === 'person' ? 'COCO-SSD person boxes' : 'MoveNet MultiPose Lightning'} | FPS ~${fps}`;
+          debugEl.textContent = `${detectionMode === 'person' ? 'COCO-SSD person boxes' : 'MoveNet MultiPose Lightning'} | FPS ~${fps} | every ${detectEveryFrames} frame${detectEveryFrames === 1 ? '' : 's'} | ${RESOLUTION_PRESETS[resolutionPresetIndex].label}`;
         } catch (err) {
           statusEl.textContent = 'Detection warning: ' + err.message;
         }
