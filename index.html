@@ -564,8 +564,8 @@
     async function setup() {
       try {
         statusEl.textContent = 'Loading TensorFlow backend...';
-        await tf.setBackend('webgl');
-        await tf.ready();
+        //await tf.setBackend('webgl');
+       // await tf.ready();
         await loadHeadbandModel();
         await loadPersonDetector();
         statusEl.textContent = 'Starting camera...';
