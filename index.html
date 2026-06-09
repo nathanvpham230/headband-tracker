@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>Headband Tracker - Detection Toggle</title>
+  <title>Headband Tracker - Headband Classifier</title>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <style>
@@ -57,6 +57,10 @@
     }
     label.option input { width: 18px; height: 18px; }
     .hint { opacity: 0.75; font-size: 12px; line-height: 1.35; margin-top: 8px; }
+    .slider-row { margin-bottom: 14px; }
+    .slider-head { display: flex; align-items: center; justify-content: space-between; font-size: 14px; margin-bottom: 7px; }
+    .value-pill { background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.25); border-radius: 999px; padding: 3px 8px; }
+    input[type=range] { width: 100%; accent-color: yellow; }
   </style>
 </head>
 <body>
@@ -113,6 +117,7 @@
       <label class="option"><input type="checkbox" id="drawPoseLabels" checked onchange="syncDrawOptions()"> Pose labels</label>
       <label class="option"><input type="checkbox" id="drawHeadCrops" checked onchange="syncDrawOptions()"> Head crop boxes</label>
       <label class="option"><input type="checkbox" id="drawCropCenters" checked onchange="syncDrawOptions()"> Crop centers</label>
+      <label class="option"><input type="checkbox" id="drawHeadbandLabels" checked onchange="syncDrawOptions()"> Headband predictions</label>
     </div>
   </aside>
   <button id="drawer-tab" onclick="toggleDrawer()" aria-label="Show options">‹</button>
@@ -130,6 +135,7 @@
 
     let personDetector = null;
     let poseDetector = null;
+    let headbandModel = null;
     let currentStream = null;
     let isDetecting = false;
     let detectionMode = 'person';
@@ -144,6 +150,7 @@
     ];
     let lastPeople = [];
     let lastPoses = [];
+    let lastCropResults = [];
     let frameCount = 0;
     let lastFpsTime = performance.now();
     let fps = 0;
@@ -152,6 +159,8 @@
     const POSE_SCORE_MIN = 0.18;
     const PERSON_SCORE_MIN = 0.40;
     const HEAD_CROP_SIZE = 224;
+    const HEADBAND_CLASS_NAMES = ['headband', 'no_headband'];
+    const HEADBAND_CONFIDENCE_MIN = 0.65;
 
     const draw = {
       personBoxes: true,
@@ -160,7 +169,8 @@
       keypoints: true,
       poseLabels: true,
       headCrops: true,
-      cropCenters: true
+      cropCenters: true,
+      headbandLabels: true
     };
 
     const EDGES = [
@@ -327,18 +337,28 @@
       }
     }
 
-    function drawHeadCrop(crop, dims, label) {
+    function drawHeadCrop(crop, dims, label, prediction) {
       const rect = toScreenRect(crop, dims);
+      const isHeadband = prediction && prediction.label === 'headband' && prediction.confidence >= HEADBAND_CONFIDENCE_MIN;
+      const color = isHeadband ? '#ff2b2b' : 'yellow';
       if (draw.headCrops) {
-        ctx.strokeStyle = 'yellow';
-        ctx.lineWidth = 3;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = isHeadband ? 4 : 3;
         ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
-        ctx.font = '12px Arial';
-        ctx.fillStyle = 'yellow';
-        ctx.fillText(label || 'headband crop', rect.x + 4, rect.y + 14);
+      }
+      if (draw.headbandLabels) {
+        const text = prediction
+          ? `${prediction.label} ${Math.round(prediction.confidence * 100)}%`
+          : (label || 'headband crop');
+        ctx.font = 'bold 13px Arial';
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = 'black';
+        ctx.fillStyle = color;
+        ctx.strokeText(text, rect.x + 4, rect.y + 16);
+        ctx.fillText(text, rect.x + 4, rect.y + 16);
       }
       if (draw.cropCenters) {
-        ctx.fillStyle = 'yellow';
+        ctx.fillStyle = color;
         ctx.beginPath();
         ctx.arc(rect.x + rect.w / 2, rect.y + rect.h / 2, 4, 0, Math.PI * 2);
         ctx.fill();
@@ -362,28 +382,22 @@
     }
 
     function drawCachedDetections(dims) {
-      let cropCount = 0;
       if (detectionMode === 'person') {
-        for (const person of lastPeople) {
-          drawPersonBox(person, dims);
-          const crop = estimateHeadCropFromPerson(person);
-          if (crop) {
-            cropCount++;
-            drawHeadCrop(crop, dims, 'box crop');
-          }
-        }
-        return { count: lastPeople.length, cropCount };
+        for (const person of lastPeople) drawPersonBox(person, dims);
+      } else {
+        lastPoses.forEach((pose, i) => drawSkeleton(pose, dims, i + 1));
       }
 
-      lastPoses.forEach((pose, i) => {
-        drawSkeleton(pose, dims, i + 1);
-        const crop = estimateHeadCropFromPose(pose);
-        if (crop) {
-          cropCount++;
-          drawHeadCrop(crop, dims, 'pose crop');
-        }
-      });
-      return { count: lastPoses.length, cropCount };
+      let headbandCount = 0;
+      for (const item of lastCropResults) {
+        if (item.prediction && item.prediction.label === 'headband' && item.prediction.confidence >= HEADBAND_CONFIDENCE_MIN) headbandCount++;
+        drawHeadCrop(item.crop, dims, item.source === 'pose' ? 'pose crop' : 'box crop', item.prediction);
+      }
+      return {
+        count: detectionMode === 'person' ? lastPeople.length : lastPoses.length,
+        cropCount: lastCropResults.length,
+        headbandCount
+      };
     }
 
     function toggleDrawer() {
@@ -409,6 +423,7 @@
       draw.poseLabels = document.getElementById('drawPoseLabels').checked;
       draw.headCrops = document.getElementById('drawHeadCrops').checked;
       draw.cropCenters = document.getElementById('drawCropCenters').checked;
+      draw.headbandLabels = document.getElementById('drawHeadbandLabels').checked;
     }
 
     async function setDetectionMode(mode) {
@@ -416,6 +431,65 @@
       statusEl.textContent = mode === 'person' ? 'Switched to person detection' : 'Switched to skeleton pose';
       if (mode === 'person' && !personDetector) await loadPersonDetector();
       if (mode === 'skeleton' && !poseDetector) await loadPoseDetector();
+    }
+
+    async function loadHeadbandModel() {
+      if (headbandModel) return;
+      statusEl.textContent = 'Loading headband classifier...';
+      headbandModel = await tf.loadLayersModel('./model/model.json');
+      // Warm up the model once so the first live prediction does not stall.
+      const warmup = tf.zeros([1, HEAD_CROP_SIZE, HEAD_CROP_SIZE, 3]);
+      const pred = headbandModel.predict(warmup);
+      await pred.data();
+      warmup.dispose();
+      pred.dispose();
+    }
+
+    function makeHeadCropTensor(crop) {
+      return tf.tidy(() => {
+        const frame = tf.browser.fromPixels(video);
+        const y1 = crop.y / video.videoHeight;
+        const x1 = crop.x / video.videoWidth;
+        const y2 = (crop.y + crop.h) / video.videoHeight;
+        const x2 = (crop.x + crop.w) / video.videoWidth;
+        const boxes = [[y1, x1, y2, x2]];
+        const boxInd = [0];
+        const batched = frame.expandDims(0);
+        // Keep pixel range 0-255 because the exported Keras model already includes Rescaling(1./255).
+        return tf.image.cropAndResize(batched, boxes, boxInd, [HEAD_CROP_SIZE, HEAD_CROP_SIZE]);
+      });
+    }
+
+    async function classifyHeadCrop(crop) {
+      if (!headbandModel) return null;
+      const input = makeHeadCropTensor(crop);
+      const output = headbandModel.predict(input);
+      const values = await output.data();
+      input.dispose();
+      output.dispose();
+      let bestIndex = 0;
+      if (values[1] > values[0]) bestIndex = 1;
+      return {
+        label: HEADBAND_CLASS_NAMES[bestIndex],
+        confidence: Number(values[bestIndex])
+      };
+    }
+
+    async function classifyCurrentCrops() {
+      const crops = [];
+      if (detectionMode === 'person') {
+        for (const person of lastPeople) {
+          const crop = estimateHeadCropFromPerson(person);
+          if (crop) crops.push({ crop, source: 'box' });
+        }
+      } else {
+        for (const pose of lastPoses) {
+          const crop = estimateHeadCropFromPose(pose);
+          if (crop) crops.push({ crop, source: 'pose' });
+        }
+      }
+      for (const item of crops) item.prediction = await classifyHeadCrop(item.crop);
+      lastCropResults = crops;
     }
 
     async function loadPersonDetector() {
@@ -446,6 +520,7 @@
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       lastPeople = [];
       lastPoses = [];
+      lastCropResults = [];
       detectFrameCounter = 0;
 
       try {
@@ -491,6 +566,7 @@
         statusEl.textContent = 'Loading TensorFlow backend...';
         await tf.setBackend('webgl');
         await tf.ready();
+        await loadHeadbandModel();
         await loadPersonDetector();
         statusEl.textContent = 'Starting camera...';
         await startCamera(currentLens);
@@ -523,19 +599,21 @@
               const predictions = await personDetector.detect(video);
               lastPeople = predictions.filter(p => p.class === 'person' && p.score >= PERSON_SCORE_MIN);
               lastPoses = [];
+              await classifyCurrentCrops();
             } else {
               if (!poseDetector) await loadPoseDetector();
               const poses = await poseDetector.estimatePoses(video, { maxPoses: 15, flipHorizontal: false });
               lastPoses = poses.filter(p => (p.score || 0) >= POSE_SCORE_MIN);
               lastPeople = [];
+              await classifyCurrentCrops();
             }
           }
 
-          const { count, cropCount } = drawCachedDetections(dims);
+          const { count, cropCount, headbandCount } = drawCachedDetections(dims);
           if (detectionMode === 'person') {
-            statusEl.textContent = `Person mode — ${count} person${count !== 1 ? 's' : ''}, ${cropCount} crop${cropCount !== 1 ? 's' : ''}`;
+            statusEl.textContent = `Person mode — ${count} person${count !== 1 ? 's' : ''}, ${cropCount} crop${cropCount !== 1 ? 's' : ''}, ${headbandCount} headband${headbandCount !== 1 ? 's' : ''}`;
           } else {
-            statusEl.textContent = `Skeleton mode — ${count} pose${count !== 1 ? 's' : ''}, ${cropCount} crop${cropCount !== 1 ? 's' : ''}`;
+            statusEl.textContent = `Skeleton mode — ${count} pose${count !== 1 ? 's' : ''}, ${cropCount} crop${cropCount !== 1 ? 's' : ''}, ${headbandCount} headband${headbandCount !== 1 ? 's' : ''}`;
           }
           frameCount++;
           const now = performance.now();
@@ -550,21 +628,6 @@
         }
 
         if (isDetecting) detectLoop();
-      });
-    }
-
-    function makeHeadCropTensor(crop) {
-      return tf.tidy(() => {
-        const frame = tf.browser.fromPixels(video);
-        const y1 = crop.y / video.videoHeight;
-        const x1 = crop.x / video.videoWidth;
-        const y2 = (crop.y + crop.h) / video.videoHeight;
-        const x2 = (crop.x + crop.w) / video.videoWidth;
-        const boxes = [[y1, x1, y2, x2]];
-        const boxInd = [0];
-        const batched = frame.expandDims(0);
-        const cropped = tf.image.cropAndResize(batched, boxes, boxInd, [HEAD_CROP_SIZE, HEAD_CROP_SIZE]);
-        return cropped.div(255);
       });
     }
 
