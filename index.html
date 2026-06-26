@@ -2,251 +2,162 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Headband Dataset Builder</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Headband Tracker</title>
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <style>
     * { box-sizing: border-box; }
-    body { margin: 0; font-family: Arial, sans-serif; background: #111; color: #eee; }
-    header { padding: 14px 18px; background: #1d1d1d; border-bottom: 1px solid #333; }
-    h1 { margin: 0 0 6px; font-size: 20px; }
-    p { margin: 4px 0; color: #bbb; font-size: 14px; }
-    main { display: grid; grid-template-columns: minmax(520px, 2fr) minmax(360px, 1fr); gap: 14px; padding: 14px; }
-    .panel { background: #1b1b1b; border: 1px solid #333; border-radius: 10px; padding: 12px; }
-    .video-wrap { position: relative; width: 100%; background: #000; border-radius: 8px; overflow: hidden; aspect-ratio: 16 / 9; }
-    video, canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
-    .timeline-controls { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; margin-top: 10px; }
-    .timeline-controls button { width: auto; min-width: 92px; }
-    .timeline-controls input[type=range] { width: 100%; padding: 0; accent-color: #2d6cdf; }
-    .time-readout { font-size: 13px; color: #ccc; font-variant-numeric: tabular-nums; white-space: nowrap; }
-    .skip-controls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
-    .skip-controls button { background: #444; }
-    .controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
-    .full { grid-column: 1 / -1; }
-    label { font-size: 13px; color: #ddd; display: block; margin-bottom: 4px; }
-    input, select, button { width: 100%; padding: 9px 10px; border-radius: 8px; border: 1px solid #444; background: #252525; color: white; font-size: 14px; }
-    button { cursor: pointer; background: #2d6cdf; border: none; font-weight: 700; }
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #000; color: #fff; font-family: Arial, sans-serif; }
+    #app { position: fixed; inset: 0; background: #000; }
+    video, canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    #status {
+      position: fixed; top: env(safe-area-inset-top, 0); left: 0; right: 0; z-index: 20;
+      padding: 8px 46px 8px 10px; background: rgba(0,0,0,.65); color: #fff;
+      font-size: 13px; text-align: center; line-height: 1.25;
+    }
+    #drawerTab {
+      position: fixed; top: 50%; right: 0; transform: translateY(-50%); z-index: 40;
+      width: 34px; height: 74px; border: 1px solid rgba(255,255,255,.28); border-right: none;
+      border-radius: 14px 0 0 14px; background: rgba(45,108,223,.95); color: #fff;
+      display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 700;
+      cursor: pointer; user-select: none;
+    }
+    #drawer {
+      position: fixed; top: 0; right: 0; bottom: 0; z-index: 35;
+      width: min(330px, 86vw); padding: calc(env(safe-area-inset-top, 0px) + 46px) 14px 18px;
+      background: rgba(18,18,18,.96); border-left: 1px solid #333; overflow-y: auto;
+      transform: translateX(100%); transition: transform .22s ease;
+      box-shadow: -12px 0 30px rgba(0,0,0,.45);
+    }
+    #drawer.open { transform: translateX(0); }
+    #drawer h2 { margin: 0 0 12px; font-size: 18px; }
+    .section { border-top: 1px solid #333; padding-top: 12px; margin-top: 12px; }
+    label { display: block; margin: 9px 0 5px; font-size: 13px; color: #ddd; }
+    select, button, input[type="range"] { width: 100%; }
+    select, button {
+      border: 1px solid #444; border-radius: 9px; background: #262626; color: #fff;
+      padding: 10px; font-size: 14px;
+    }
+    button { background: #2d6cdf; border: none; font-weight: 700; cursor: pointer; }
     button.secondary { background: #444; }
     button.danger { background: #8f2d2d; }
-    button.success { background: #2d8f55; }
-    button:disabled { opacity: 0.45; cursor: not-allowed; }
-    .status { margin-top: 10px; padding: 9px 10px; border-radius: 8px; background: #101010; border: 1px solid #333; font-size: 13px; color: #ccc; min-height: 36px; }
-    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
-    .stat { background: #101010; border: 1px solid #333; border-radius: 8px; padding: 9px; text-align: center; }
-    .stat strong { display: block; font-size: 18px; }
-    .stat span { color: #aaa; font-size: 12px; }
-    .preview-tools { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: end; margin-top: 10px; }
-    .preview-tools button { min-width: 84px; }
-    .preview-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; max-height: 65vh; overflow: auto; margin-top: 10px; }
-    .thumb { background: #101010; border: 3px solid #333; border-radius: 8px; overflow: hidden; position: relative; user-select: none; }
-    .thumb.selected { box-shadow: 0 0 0 3px white; }
-    .thumb[data-label="headband"] { border-color: #98ff00; }
-    .thumb[data-label="no_headband"] { border-color: #935cff; }
-    .thumb[data-label="unsure"] { border-color: #ff2d79; }
-    .thumb img { width: 100%; display: block; aspect-ratio: 1 / 1; object-fit: cover; }
-    .thumb .meta { padding: 4px; font-size: 11px; color: #ddd; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .thumb .delete { position: absolute; top: 4px; right: 4px; width: auto; padding: 2px 6px; border-radius: 5px; background: #8f2d2d; font-size: 11px; }
-    .thumb select { font-size: 11px; padding: 3px; border-radius: 0; border: none; background: rgba(0,0,0,0.75); }
-    .note { padding: 10px; background: #171717; border-left: 3px solid #2d6cdf; margin-top: 10px; font-size: 13px; color: #bbb; line-height: 1.35; }
-    .inline-row { display: flex; gap: 8px; align-items: center; }
-    @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+    .row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+    .value { font-size: 12px; color: #bbb; min-width: 52px; text-align: right; }
+    .check { display: grid; grid-template-columns: 24px 1fr; gap: 6px; align-items: center; margin: 7px 0; font-size: 13px; color: #ddd; }
+    .check input { width: 18px; height: 18px; }
+    .tiny { color: #aaa; font-size: 12px; line-height: 1.35; margin-top: 8px; }
+    .pill { display: inline-block; padding: 2px 6px; border-radius: 999px; background: #222; border: 1px solid #444; font-size: 12px; color: #ddd; }
   </style>
 </head>
 <body>
-  <header>
-    <h1>Headband Dataset Builder</h1>
-    <p>Load a local video, choose COCO person detection or MoveNet skeleton detection, crop head regions, relabel crops, and download a Roboflow-ready ZIP.</p>
-  </header>
+  <div id="app">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="canvas"></canvas>
+  </div>
 
-  <main>
-    <section class="panel">
-      <div class="video-wrap">
-        <video id="video" controls muted playsinline></video>
-        <canvas id="overlay"></canvas>
+  <div id="status">Starting...</div>
+  <button id="drawerTab" aria-label="open options">‹</button>
+
+  <aside id="drawer">
+    <h2>Tracker Options</h2>
+
+    <div class="section">
+      <label for="modeSelect">Detection mode</label>
+      <select id="modeSelect">
+        <option value="person">Person detection / COCO-SSD</option>
+        <option value="skeleton">Skeleton pose / MoveNet</option>
+      </select>
+
+      <label for="lensToggle">Camera lens</label>
+      <button id="lensToggle">Lens: Ultrawide</button>
+
+      <label for="resolutionSelect">Resolution</label>
+      <select id="resolutionSelect">
+        <option value="480">480p</option>
+        <option value="720" selected>720p</option>
+        <option value="1080">1080p</option>
+      </select>
+    </div>
+
+    <div class="section">
+      <div class="row"><label for="frameStep">Detect every N frames</label><span id="frameStepValue" class="value">2</span></div>
+      <input id="frameStep" type="range" min="1" max="10" value="2" />
+
+      <div class="row"><label for="threshold">Detection threshold</label><span id="thresholdValue" class="value">0.40</span></div>
+      <input id="threshold" type="range" min="0.10" max="0.90" step="0.05" value="0.40" />
+
+      <div class="row"><label for="cropScale">Head crop size</label><span id="cropScaleValue" class="value">1.80</span></div>
+      <input id="cropScale" type="range" min="1.0" max="3.0" step="0.1" value="1.8" />
+    </div>
+
+    <div class="section">
+      <label>Overlays</label>
+      <div class="check"><input id="showPersonBoxes" type="checkbox" checked><span>Person boxes</span></div>
+      <div class="check"><input id="showConfidence" type="checkbox" checked><span>Confidence / classifier labels</span></div>
+      <div class="check"><input id="showSkeleton" type="checkbox" checked><span>Skeleton lines</span></div>
+      <div class="check"><input id="showKeypoints" type="checkbox" checked><span>Keypoints</span></div>
+      <div class="check"><input id="showPoseLabels" type="checkbox" checked><span>Pose labels</span></div>
+      <div class="check"><input id="showHeadCrops" type="checkbox" checked><span>Head crop boxes</span></div>
+      <div class="check"><input id="showCropCenters" type="checkbox"><span>Crop centers</span></div>
+      <div class="check"><input id="showStats" type="checkbox" checked><span>Status stats</span></div>
+    </div>
+
+    <div class="section">
+      <button id="reloadCameraBtn" class="secondary">Restart camera</button>
+      <button id="loadClassifierBtn" style="margin-top:8px;">Load classifier</button>
+      <div class="tiny">
+        Classifier path: <span class="pill">./model/model.json</span><br>
+        Use this only after your TF.js model files are uploaded.
       </div>
+    </div>
+  </aside>
 
-      <div class="timeline-controls">
-        <button id="playPauseBtn" class="secondary" disabled>Play</button>
-        <input id="timeline" type="range" min="0" max="0" value="0" step="0.01" disabled />
-        <div id="timeReadout" class="time-readout">00:00 / 00:00</div>
-      </div>
-      <div class="skip-controls">
-        <button id="back10Btn" disabled>-10s</button>
-        <button id="back1Btn" disabled>-1s</button>
-        <button id="forward1Btn" disabled>+1s</button>
-        <button id="forward10Btn" disabled>+10s</button>
-      </div>
-
-      <div class="controls">
-        <div class="full">
-          <label for="videoFile">Local video file</label>
-          <input id="videoFile" type="file" accept="video/*" />
-        </div>
-
-        <div>
-          <label for="detectorSelect">Detection model</label>
-          <select id="detectorSelect">
-            <option value="skeleton">Skeleton pose detection - MoveNet MultiPose</option>
-            <option value="coco">Person detection - COCO-SSD boxes</option>
-          </select>
-        </div>
-
-        <div>
-          <label for="labelSelect">Default export label</label>
-          <select id="labelSelect">
-            <option value="headband">headband</option>
-            <option value="no_headband">no_headband</option>
-            <option value="unsure">unsure</option>
-          </select>
-        </div>
-
-        <div>
-          <label for="cropMode">Crop mode</label>
-          <select id="cropMode">
-            <option value="head_only">Head only</option>
-            <option value="head_shoulders">Head + shoulders context</option>
-          </select>
-        </div>
-
-        <div>
-          <label for="sampleEvery">Sample every N video frames</label>
-          <input id="sampleEvery" type="number" value="15" min="1" max="300" />
-        </div>
-
-        <div>
-          <label for="autoSpeed">Auto export playback speed</label>
-          <select id="autoSpeed">
-            <option value="0.25">0.25x</option>
-            <option value="0.5">0.5x</option>
-            <option value="1" selected>1x</option>
-            <option value="1.5">1.5x</option>
-            <option value="2">2x</option>
-            <option value="3">3x</option>
-            <option value="4">4x</option>
-          </select>
-        </div>
-
-        <div>
-          <label for="kpThreshold">Keypoint score threshold</label>
-          <input id="kpThreshold" type="number" value="0.25" min="0.05" max="0.90" step="0.05" />
-        </div>
-
-        <div>
-          <label for="poseThreshold">Pose score threshold</label>
-          <input id="poseThreshold" type="number" value="0.20" min="0.05" max="0.90" step="0.05" />
-        </div>
-
-        <div>
-          <label for="personThreshold">Person score threshold</label>
-          <input id="personThreshold" type="number" value="0.40" min="0.05" max="0.95" step="0.05" />
-        </div>
-
-        <div>
-          <label for="cropScale">Crop padding scale</label>
-          <input id="cropScale" type="number" value="1.8" min="1.0" max="4.0" step="0.1" />
-        </div>
-
-        <div>
-          <label for="outputSize">Output image size</label>
-          <input id="outputSize" type="number" value="224" min="96" max="512" step="32" />
-        </div>
-
-        <button id="loadModelBtn">Load selected model</button>
-        <button id="scanBtn" disabled>Scan paused frame</button>
-        <button id="autoBtn" disabled>Start auto export</button>
-        <button id="downloadBtn" class="secondary" disabled>Download crops</button>
-        <button id="clearBtn" class="danger">Clear crops</button>
-      </div>
-
-      <div id="status" class="status">Load a video and detection model to begin.</div>
-
-      <div class="stats">
-        <div class="stat"><strong id="peopleCount">0</strong><span>detections in frame</span></div>
-        <div class="stat"><strong id="cropCount">0</strong><span>saved crops</span></div>
-        <div class="stat"><strong id="frameCount">0</strong><span>frames scanned</span></div>
-      </div>
-
-      <div class="note">
-        ZIP output uses only top-level class folders: <b>headband/</b>, <b>no_headband/</b>, and <b>unsure/</b>. Crop method and detector type are stored in the filename and manifest, not as folders, so Roboflow will not create accidental classes.
-      </div>
-    </section>
-
-    <aside class="panel">
-      <h2 style="font-size:16px; margin:0 0 8px;">Crop Preview</h2>
-      <p>Select crops, mass assign labels, delete bad crops, then download.</p>
-      <div class="preview-tools">
-        <div>
-          <label for="bulkLabelSelect">Mass assign selected</label>
-          <select id="bulkLabelSelect">
-            <option value="headband">headband</option>
-            <option value="no_headband">no_headband</option>
-            <option value="unsure">unsure</option>
-          </select>
-        </div>
-        <button id="applyBulkBtn" class="success">Apply</button>
-        <button id="deleteSelectedBtn" class="danger">Delete</button>
-      </div>
-      <div class="inline-row" style="margin-top:8px;">
-        <button id="selectAllBtn" class="secondary">Select all</button>
-        <button id="selectNoneBtn" class="secondary">Select none</button>
-      </div>
-      <p style="font-size:12px; margin-top:8px;">Hotkeys: <b>1</b> = headband, <b>2</b> = no_headband, <b>3</b> = unsure, <b>Delete</b> = delete selected.</p>
-      <div id="previewGrid" class="preview-grid"></div>
-    </aside>
-  </main>
-
-  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js"></script>
 
   <script>
     const video = document.getElementById('video');
-    const overlay = document.getElementById('overlay');
-    const ctx = overlay.getContext('2d');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
     const statusEl = document.getElementById('status');
-    const videoFile = document.getElementById('videoFile');
-    const playPauseBtn = document.getElementById('playPauseBtn');
-    const timeline = document.getElementById('timeline');
-    const timeReadout = document.getElementById('timeReadout');
-    const back10Btn = document.getElementById('back10Btn');
-    const back1Btn = document.getElementById('back1Btn');
-    const forward1Btn = document.getElementById('forward1Btn');
-    const forward10Btn = document.getElementById('forward10Btn');
-    const detectorSelect = document.getElementById('detectorSelect');
-    const labelSelect = document.getElementById('labelSelect');
-    const cropMode = document.getElementById('cropMode');
-    const sampleEvery = document.getElementById('sampleEvery');
-    const autoSpeed = document.getElementById('autoSpeed');
-    const kpThreshold = document.getElementById('kpThreshold');
-    const poseThreshold = document.getElementById('poseThreshold');
-    const personThreshold = document.getElementById('personThreshold');
+    const drawer = document.getElementById('drawer');
+    const drawerTab = document.getElementById('drawerTab');
+
+    const modeSelect = document.getElementById('modeSelect');
+    const lensToggle = document.getElementById('lensToggle');
+    const resolutionSelect = document.getElementById('resolutionSelect');
+    const frameStep = document.getElementById('frameStep');
+    const frameStepValue = document.getElementById('frameStepValue');
+    const threshold = document.getElementById('threshold');
+    const thresholdValue = document.getElementById('thresholdValue');
     const cropScale = document.getElementById('cropScale');
-    const outputSize = document.getElementById('outputSize');
-    const loadModelBtn = document.getElementById('loadModelBtn');
-    const scanBtn = document.getElementById('scanBtn');
-    const autoBtn = document.getElementById('autoBtn');
-    const downloadBtn = document.getElementById('downloadBtn');
-    const clearBtn = document.getElementById('clearBtn');
-    const previewGrid = document.getElementById('previewGrid');
-    const peopleCount = document.getElementById('peopleCount');
-    const cropCount = document.getElementById('cropCount');
-    const frameCount = document.getElementById('frameCount');
-    const bulkLabelSelect = document.getElementById('bulkLabelSelect');
-    const applyBulkBtn = document.getElementById('applyBulkBtn');
-    const deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
-    const selectAllBtn = document.getElementById('selectAllBtn');
-    const selectNoneBtn = document.getElementById('selectNoneBtn');
+    const cropScaleValue = document.getElementById('cropScaleValue');
+    const reloadCameraBtn = document.getElementById('reloadCameraBtn');
+    const loadClassifierBtn = document.getElementById('loadClassifierBtn');
 
-    let skeletonDetector = null;
+    const overlay = {
+      personBoxes: document.getElementById('showPersonBoxes'),
+      confidence: document.getElementById('showConfidence'),
+      skeleton: document.getElementById('showSkeleton'),
+      keypoints: document.getElementById('showKeypoints'),
+      poseLabels: document.getElementById('showPoseLabels'),
+      headCrops: document.getElementById('showHeadCrops'),
+      cropCenters: document.getElementById('showCropCenters'),
+      stats: document.getElementById('showStats')
+    };
+
+    let stream = null;
     let personDetector = null;
-    let loadedDetectorType = null;
-    let savedCrops = [];
-    let scannedFrames = 0;
-    let autoRunning = false;
-    let lastProcessedFrame = -1;
-    let isScrubbing = false;
+    let poseDetector = null;
+    let headbandModel = null;
+    let isRunning = false;
+    let frameCounter = 0;
+    let currentLens = 'ultrawide';
+    let lastResults = [];
 
-    const skeletonEdges = [
+    const EDGES = [
       ['nose','left_eye'], ['nose','right_eye'], ['left_eye','left_ear'], ['right_eye','right_ear'],
       ['left_shoulder','right_shoulder'], ['left_shoulder','left_elbow'], ['left_elbow','left_wrist'],
       ['right_shoulder','right_elbow'], ['right_elbow','right_wrist'], ['left_shoulder','left_hip'],
@@ -254,530 +165,282 @@
       ['left_knee','left_ankle'], ['right_hip','right_knee'], ['right_knee','right_ankle']
     ];
 
-    function setStatus(text) { statusEl.textContent = text; }
-
-    function formatTime(seconds) {
-      if (!Number.isFinite(seconds)) seconds = 0;
-      const mins = Math.floor(seconds / 60);
-      const secs = Math.floor(seconds % 60);
-      return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    function setStatus(text, error=false) {
+      statusEl.textContent = text;
+      statusEl.style.background = error ? 'rgba(120,0,0,.8)' : 'rgba(0,0,0,.65)';
     }
 
-    function updateTimelineUI() {
-      const duration = Number.isFinite(video.duration) ? video.duration : 0;
-      if (!isScrubbing) timeline.value = video.currentTime || 0;
-      timeline.max = duration || 0;
-      timeReadout.textContent = `${formatTime(video.currentTime || 0)} / ${formatTime(duration)}`;
-      playPauseBtn.textContent = video.paused ? 'Play' : 'Pause';
+    function syncLabels() {
+      frameStepValue.textContent = frameStep.value;
+      thresholdValue.textContent = Number(threshold.value).toFixed(2);
+      cropScaleValue.textContent = Number(cropScale.value).toFixed(2);
+      lensToggle.textContent = `Lens: ${currentLens === 'ultrawide' ? 'Ultrawide' : 'Normal'}`;
     }
 
-    function setVideoControlsEnabled(enabled) {
-      playPauseBtn.disabled = !enabled;
-      timeline.disabled = !enabled;
-      back10Btn.disabled = !enabled;
-      back1Btn.disabled = !enabled;
-      forward1Btn.disabled = !enabled;
-      forward10Btn.disabled = !enabled;
+    function resizeCanvas() {
+      canvas.width = canvas.clientWidth || window.innerWidth;
+      canvas.height = canvas.clientHeight || window.innerHeight;
     }
 
-    function updateActionButtons() {
-      const ready = Boolean(video.videoWidth && loadedDetectorType);
-      scanBtn.disabled = !ready;
-      autoBtn.disabled = !ready;
-    }
-
-    function seekBy(seconds) {
-      if (!Number.isFinite(video.duration)) return;
-      video.currentTime = Math.max(0, Math.min(video.duration, video.currentTime + seconds));
-      lastProcessedFrame = -1;
-      updateTimelineUI();
-    }
-
-    function resizeOverlay() {
-      overlay.width = video.clientWidth || 1280;
-      overlay.height = video.clientHeight || 720;
-      drawOverlay([]);
-    }
-
-    function getContainDimensions() {
-      const screenW = overlay.width;
-      const screenH = overlay.height;
-      const videoW = video.videoWidth || 16;
-      const videoH = video.videoHeight || 9;
+    function getCoverDimensions() {
+      const screenW = canvas.width, screenH = canvas.height;
+      const videoW = video.videoWidth || 16, videoH = video.videoHeight || 9;
       const screenRatio = screenW / screenH;
       const videoRatio = videoW / videoH;
       let drawW, drawH, offsetX, offsetY;
       if (screenRatio > videoRatio) {
-        drawH = screenH;
-        drawW = screenH * videoRatio;
-        offsetX = (screenW - drawW) / 2;
-        offsetY = 0;
+        drawW = screenW; drawH = screenW / videoRatio; offsetX = 0; offsetY = (screenH - drawH) / 2;
       } else {
-        drawW = screenW;
-        drawH = screenW / videoRatio;
-        offsetX = 0;
-        offsetY = (screenH - drawH) / 2;
+        drawH = screenH; drawW = screenH * videoRatio; offsetX = (screenW - drawW) / 2; offsetY = 0;
       }
-      return { drawW, drawH, offsetX, offsetY };
+      return { drawW, drawH, offsetX, offsetY, scaleX: drawW / videoW, scaleY: drawH / videoH };
     }
 
-    function clampRect(x, y, w, h, maxW, maxH) {
-      const nx = Math.max(0, Math.min(x, maxW - 1));
-      const ny = Math.max(0, Math.min(y, maxH - 1));
-      const nw = Math.max(1, Math.min(w, maxW - nx));
-      const nh = Math.max(1, Math.min(h, maxH - ny));
-      return { x: nx, y: ny, w: nw, h: nh };
+    function clampRect(r) {
+      const maxW = video.videoWidth, maxH = video.videoHeight;
+      const x = Math.max(0, Math.min(r.x, maxW - 1));
+      const y = Math.max(0, Math.min(r.y, maxH - 1));
+      const w = Math.max(1, Math.min(r.w, maxW - x));
+      const h = Math.max(1, Math.min(r.h, maxH - y));
+      return { x, y, w, h };
     }
 
-    function keypointMap(pose) {
-      const map = {};
-      for (const kp of pose.keypoints || []) map[kp.name] = kp;
-      return map;
-    }
-
-    function good(kp) {
-      return kp && (kp.score == null || kp.score >= Number(kpThreshold.value));
-    }
-
-    function makeSkeletonCropRect(pose) {
-      const k = keypointMap(pose);
-      const headPoints = [k.nose, k.left_eye, k.right_eye, k.left_ear, k.right_ear].filter(good);
-      const shoulderPoints = [k.left_shoulder, k.right_shoulder].filter(good);
-      if (headPoints.length < 1) return null;
-
-      const xs = headPoints.map(p => p.x);
-      const ys = headPoints.map(p => p.y);
-      const minX = Math.min(...xs);
-      const maxX = Math.max(...xs);
-      const minY = Math.min(...ys);
-      const maxY = Math.max(...ys);
-
-      const shoulderWidth = shoulderPoints.length === 2 ? Math.abs(shoulderPoints[0].x - shoulderPoints[1].x) : 0;
-      const faceWidth = Math.max(maxX - minX, shoulderWidth * 0.33, 32);
-      let cropW = faceWidth * Number(cropScale.value);
-      let cropH = cropW;
-
-      const centerX = (minX + maxX) / 2;
-      let centerY = (minY + maxY) / 2;
-
-      if (cropMode.value === 'head_shoulders') {
-        cropW = Math.max(cropW, shoulderWidth * 0.8, faceWidth * 2.2);
-        cropH = cropW * 1.15;
-        centerY += cropH * 0.18;
-      } else {
-        centerY += cropH * 0.08;
-      }
-
-      return clampRect(centerX - cropW / 2, centerY - cropH / 2, cropW, cropH, video.videoWidth, video.videoHeight);
-    }
-
-    function makeCocoCropRect(prediction) {
-      const [bx, by, bw, bh] = prediction.bbox;
+    function personHeadRect(bbox) {
+      const [x, y, w, h] = bbox;
+      const cropH = h * 0.30;
       const scale = Number(cropScale.value);
-      let cropW = bw * 0.34 * scale;
-      let cropH = cropW;
-      let centerX = bx + bw / 2;
-      let centerY = by + bh * 0.16;
-
-      if (cropMode.value === 'head_shoulders') {
-        cropW = bw * 0.55 * scale;
-        cropH = cropW * 1.15;
-        centerY = by + bh * 0.24;
-      }
-      cropW = Math.max(32, cropW);
-      cropH = Math.max(32, cropH);
-      return clampRect(centerX - cropW / 2, centerY - cropH / 2, cropW, cropH, video.videoWidth, video.videoHeight);
+      const side = Math.max(w * 0.72, cropH) * scale;
+      return clampRect({ x: x + w / 2 - side / 2, y: y + h * 0.02, w: side, h: side });
     }
 
-    function drawOverlay(detections) {
-      ctx.clearRect(0, 0, overlay.width, overlay.height);
-      if (!video.videoWidth) return;
-      const { drawW, drawH, offsetX, offsetY } = getContainDimensions();
-      const scaleX = drawW / video.videoWidth;
-      const scaleY = drawH / video.videoHeight;
+    function kpMap(pose) {
+      const m = {};
+      for (const kp of pose.keypoints || []) m[kp.name] = kp;
+      return m;
+    }
 
-      if (loadedDetectorType === 'skeleton') {
-        detections.forEach((pose, index) => {
-          const k = keypointMap(pose);
-          ctx.strokeStyle = 'rgba(0,255,0,0.9)';
-          ctx.lineWidth = 2;
-          for (const [a, b] of skeletonEdges) {
-            if (!good(k[a]) || !good(k[b])) continue;
-            ctx.beginPath();
-            ctx.moveTo(k[a].x * scaleX + offsetX, k[a].y * scaleY + offsetY);
-            ctx.lineTo(k[b].x * scaleX + offsetX, k[b].y * scaleY + offsetY);
-            ctx.stroke();
-          }
-          for (const kp of pose.keypoints || []) {
-            if (!good(kp)) continue;
-            ctx.fillStyle = ['nose','left_eye','right_eye','left_ear','right_ear'].includes(kp.name) ? 'red' : 'lime';
-            ctx.beginPath();
-            ctx.arc(kp.x * scaleX + offsetX, kp.y * scaleY + offsetY, 3, 0, Math.PI * 2);
-            ctx.fill();
-          }
-          const rect = makeSkeletonCropRect(pose);
-          if (rect) {
-            ctx.strokeStyle = 'yellow';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(rect.x * scaleX + offsetX, rect.y * scaleY + offsetY, rect.w * scaleX, rect.h * scaleY);
-            ctx.fillStyle = 'yellow';
-            ctx.font = '14px Arial';
-            ctx.fillText(`Pose ${index + 1}`, rect.x * scaleX + offsetX + 4, rect.y * scaleY + offsetY - 6);
-          }
+    function goodKp(kp) { return kp && (kp.score == null || kp.score >= 0.25); }
+
+    function skeletonHeadRect(pose) {
+      const k = kpMap(pose);
+      const head = [k.nose, k.left_eye, k.right_eye, k.left_ear, k.right_ear].filter(goodKp);
+      if (!head.length) return null;
+      const shoulders = [k.left_shoulder, k.right_shoulder].filter(goodKp);
+      const xs = head.map(p => p.x), ys = head.map(p => p.y);
+      const minX = Math.min(...xs), maxX = Math.max(...xs);
+      const minY = Math.min(...ys), maxY = Math.max(...ys);
+      const shoulderWidth = shoulders.length === 2 ? Math.abs(shoulders[0].x - shoulders[1].x) : 0;
+      const faceWidth = Math.max(maxX - minX, shoulderWidth * 0.34, 32);
+      const side = faceWidth * Number(cropScale.value);
+      const cx = (minX + maxX) / 2;
+      const cy = (minY + maxY) / 2 + side * 0.08;
+      return clampRect({ x: cx - side / 2, y: cy - side / 2, w: side, h: side });
+    }
+
+    async function classifyRect(rect) {
+      if (!headbandModel) return null;
+      try {
+        return tf.tidy(() => {
+          const pixels = tf.browser.fromPixels(video);
+          const box = [rect.y / video.videoHeight, rect.x / video.videoWidth, (rect.y + rect.h) / video.videoHeight, (rect.x + rect.w) / video.videoWidth];
+          const crop = tf.image.cropAndResize(pixels.expandDims(0), [box], [0], [224, 224]);
+          const out = headbandModel.predict(crop);
+          return out.dataSync();
         });
-      } else if (loadedDetectorType === 'coco') {
-        detections.forEach((person, index) => {
-          const [bx, by, bw, bh] = person.bbox;
-          ctx.strokeStyle = 'lime';
-          ctx.lineWidth = 2;
-          ctx.strokeRect(bx * scaleX + offsetX, by * scaleY + offsetY, bw * scaleX, bh * scaleY);
-          ctx.fillStyle = 'lime';
-          ctx.font = '14px Arial';
-          ctx.fillText(`Person ${index + 1} ${Math.round(person.score * 100)}%`, bx * scaleX + offsetX + 4, by * scaleY + offsetY - 6);
-          const rect = makeCocoCropRect(person);
-          ctx.strokeStyle = 'yellow';
-          ctx.lineWidth = 2;
-          ctx.strokeRect(rect.x * scaleX + offsetX, rect.y * scaleY + offsetY, rect.w * scaleX, rect.h * scaleY);
-        });
+      } catch (e) {
+        console.warn('classifier error', e);
+        return null;
       }
     }
 
-    function cropToBlob(rect) {
-      const size = Number(outputSize.value);
-      const c = document.createElement('canvas');
-      c.width = size;
-      c.height = size;
-      const cctx = c.getContext('2d');
-      cctx.fillStyle = 'black';
-      cctx.fillRect(0, 0, size, size);
-      const scale = Math.min(size / rect.w, size / rect.h);
-      const drawW = rect.w * scale;
-      const drawH = rect.h * scale;
-      const dx = (size - drawW) / 2;
-      const dy = (size - drawH) / 2;
-      cctx.drawImage(video, rect.x, rect.y, rect.w, rect.h, dx, dy, drawW, drawH);
-      return new Promise(resolve => {
-        c.toBlob(blob => resolve({ blob, dataUrl: c.toDataURL('image/jpeg', 0.9) }), 'image/jpeg', 0.9);
-      });
-    }
-
-    async function getDetections() {
-      if (loadedDetectorType === 'skeleton') {
-        const posesRaw = await skeletonDetector.estimatePoses(video, { maxPoses: 20, flipHorizontal: false });
-        const threshold = Number(poseThreshold.value);
-        return posesRaw.filter(p => (p.score == null || p.score >= threshold) && makeSkeletonCropRect(p));
+    function drawBox(rect, color, label) {
+      const d = getCoverDimensions();
+      const x = rect.x * d.scaleX + d.offsetX;
+      const y = rect.y * d.scaleY + d.offsetY;
+      const w = rect.w * d.scaleX;
+      const h = rect.h * d.scaleY;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x, y, w, h);
+      if (label && overlay.confidence.checked) {
+        ctx.fillStyle = color;
+        ctx.font = '14px Arial';
+        ctx.fillText(label, x + 4, Math.max(16, y - 6));
       }
-      if (loadedDetectorType === 'coco') {
-        const predictions = await personDetector.detect(video);
-        return predictions.filter(p => p.class === 'person' && p.score >= Number(personThreshold.value));
+      if (overlay.cropCenters.checked) {
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(x + w / 2, y + h / 2, 4, 0, Math.PI * 2);
+        ctx.fill();
       }
-      return [];
     }
 
-    function rectForDetection(det) {
-      return loadedDetectorType === 'skeleton' ? makeSkeletonCropRect(det) : makeCocoCropRect(det);
-    }
-
-    async function scanFrame(save = true) {
-      if (!loadedDetectorType || !video.videoWidth) return [];
-      const detections = await getDetections();
-      peopleCount.textContent = detections.length;
-      scannedFrames += 1;
-      frameCount.textContent = scannedFrames;
-      drawOverlay(detections);
-
-      if (!save) return detections;
-
-      const label = labelSelect.value;
-      const mode = cropMode.value;
-      const detectorType = loadedDetectorType;
-      for (let i = 0; i < detections.length; i++) {
-        const rect = rectForDetection(detections[i]);
-        if (!rect) continue;
-        const { blob, dataUrl } = await cropToBlob(rect);
-        const timestamp = Math.round(video.currentTime * 1000);
-        const id = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-        const name = `${label}_${detectorType}_${mode}_t${timestamp}_p${i}_${id}.jpg`;
-        savedCrops.push({ label, mode, detectorType, name, blob, dataUrl, selected: false });
-        addPreview(savedCrops.length - 1);
+    function drawSkeleton(pose, idx) {
+      const d = getCoverDimensions();
+      const k = kpMap(pose);
+      if (overlay.skeleton.checked) {
+        ctx.strokeStyle = 'lime'; ctx.lineWidth = 2;
+        for (const [a,b] of EDGES) {
+          if (!goodKp(k[a]) || !goodKp(k[b])) continue;
+          ctx.beginPath();
+          ctx.moveTo(k[a].x * d.scaleX + d.offsetX, k[a].y * d.scaleY + d.offsetY);
+          ctx.lineTo(k[b].x * d.scaleX + d.offsetX, k[b].y * d.scaleY + d.offsetY);
+          ctx.stroke();
+        }
       }
-      refreshPreview();
-      setStatus(`Scanned frame: ${detections.length} detections, ${savedCrops.length} total crops saved.`);
-      return detections;
-    }
-
-    function addPreview(index) {
-      const crop = savedCrops[index];
-      const item = document.createElement('div');
-      item.className = 'thumb';
-      item.dataset.index = index;
-      item.dataset.label = crop.label;
-      item.innerHTML = `
-        <button class="delete" title="delete crop">X</button>
-        <img src="${crop.dataUrl}" alt="crop">
-        <select class="crop-label">
-          <option value="headband">headband</option>
-          <option value="no_headband">no_headband</option>
-          <option value="unsure">unsure</option>
-        </select>
-        <div class="meta" title="${crop.name}">${crop.name}</div>`;
-      item.querySelector('.crop-label').value = crop.label;
-      item.addEventListener('click', (e) => {
-        if (e.target.tagName === 'BUTTON' || e.target.tagName === 'SELECT') return;
-        const idx = Number(item.dataset.index);
-        savedCrops[idx].selected = !savedCrops[idx].selected;
-        refreshPreview();
-      });
-      item.querySelector('.delete').addEventListener('click', () => {
-        const idx = Number(item.dataset.index);
-        savedCrops.splice(idx, 1);
-        refreshPreview();
-      });
-      item.querySelector('.crop-label').addEventListener('change', (e) => {
-        const idx = Number(item.dataset.index);
-        relabelCrop(idx, e.target.value);
-        refreshPreview();
-      });
-      previewGrid.prepend(item);
-    }
-
-    function relabelCrop(index, newLabel) {
-      const crop = savedCrops[index];
-      if (!crop) return;
-      const parts = crop.name.split('_');
-      parts[0] = newLabel;
-      if (newLabel === 'no_headband') {
-        crop.name = crop.name.replace(/^(headband|no_headband|unsure)_/, 'no_headband_');
-      } else {
-        crop.name = crop.name.replace(/^(headband|no_headband|unsure)_/, `${newLabel}_`);
+      if (overlay.keypoints.checked) {
+        for (const kp of pose.keypoints || []) {
+          if (!goodKp(kp)) continue;
+          ctx.fillStyle = ['nose','left_eye','right_eye','left_ear','right_ear'].includes(kp.name) ? 'red' : 'lime';
+          ctx.beginPath();
+          ctx.arc(kp.x * d.scaleX + d.offsetX, kp.y * d.scaleY + d.offsetY, 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
-      crop.label = newLabel;
+      if (overlay.poseLabels.checked && goodKp(k.nose)) {
+        ctx.fillStyle = 'white'; ctx.font = '14px Arial';
+        ctx.fillText(`Pose ${idx + 1}`, k.nose.x * d.scaleX + d.offsetX + 5, k.nose.y * d.scaleY + d.offsetY - 10);
+      }
     }
 
-    function refreshPreview() {
-      previewGrid.innerHTML = '';
-      savedCrops.forEach((crop, index) => {
-        const item = document.createElement('div');
-        item.className = `thumb${crop.selected ? ' selected' : ''}`;
-        item.dataset.index = index;
-        item.dataset.label = crop.label;
-        item.innerHTML = `
-          <button class="delete" title="delete crop">X</button>
-          <img src="${crop.dataUrl}" alt="crop">
-          <select class="crop-label">
-            <option value="headband">headband</option>
-            <option value="no_headband">no_headband</option>
-            <option value="unsure">unsure</option>
-          </select>
-          <div class="meta" title="${crop.name}">${crop.name}</div>`;
-        item.querySelector('.crop-label').value = crop.label;
-        item.addEventListener('click', (e) => {
-          if (e.target.tagName === 'BUTTON' || e.target.tagName === 'SELECT') return;
-          savedCrops[index].selected = !savedCrops[index].selected;
-          refreshPreview();
-        });
-        item.querySelector('.delete').addEventListener('click', () => {
-          savedCrops.splice(index, 1);
-          refreshPreview();
-        });
-        item.querySelector('.crop-label').addEventListener('change', (e) => {
-          relabelCrop(index, e.target.value);
-          refreshPreview();
-        });
-        previewGrid.prepend(item);
-      });
-      cropCount.textContent = savedCrops.length;
-      downloadBtn.disabled = savedCrops.length === 0;
+    async function drawResults(results) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      for (const item of results) {
+        const pred = item.pred;
+        let color = 'yellow';
+        let label = item.label || '';
+        if (pred) {
+          const headband = pred[0];
+          const noHeadband = pred[1];
+          const isHeadband = headband >= noHeadband;
+          color = isHeadband ? 'cyan' : 'yellow';
+          label = `${isHeadband ? 'headband' : 'no_headband'} ${Math.round(Math.max(headband, noHeadband) * 100)}%`;
+        }
+        if (item.personRect && overlay.personBoxes.checked) drawBox(item.personRect, 'lime', item.personLabel);
+        if (item.pose) drawSkeleton(item.pose, item.index || 0);
+        if (item.headRect && overlay.headCrops.checked) drawBox(item.headRect, color, label);
+      }
     }
 
-    function applyLabelToSelected(label) {
-      savedCrops.forEach((crop, index) => {
-        if (crop.selected) relabelCrop(index, label);
-      });
-      refreshPreview();
-    }
-
-    function deleteSelected() {
-      savedCrops = savedCrops.filter(c => !c.selected);
-      refreshPreview();
-    }
-
-    async function autoLoop() {
-      if (!autoRunning) return;
-      if (video.paused || video.ended) {
-        autoRunning = false;
-        video.playbackRate = 1;
-        autoBtn.textContent = 'Start auto export';
-        setStatus('Auto export stopped. Video paused or ended.');
+    async function runDetection() {
+      if (!isRunning || video.readyState < 2) return;
+      frameCounter++;
+      const every = Math.max(1, Number(frameStep.value));
+      if (frameCounter % every !== 0) {
+        await drawResults(lastResults);
+        requestAnimationFrame(runDetection);
         return;
       }
-      const fpsGuess = 30;
-      const currentFrame = Math.floor(video.currentTime * fpsGuess);
-      const every = Math.max(1, Number(sampleEvery.value));
-      if (currentFrame !== lastProcessedFrame && currentFrame % every === 0) {
-        lastProcessedFrame = currentFrame;
-        await scanFrame(true);
-      }
-      requestAnimationFrame(autoLoop);
-    }
 
-    videoFile.addEventListener('change', () => {
-      const file = videoFile.files[0];
-      if (!file) return;
-      video.src = URL.createObjectURL(file);
-      video.pause();
-      timeline.value = 0;
-      setVideoControlsEnabled(false);
-      setStatus(`Loaded video: ${file.name}`);
-    });
-
-    video.addEventListener('loadedmetadata', () => {
-      resizeOverlay();
-      setVideoControlsEnabled(true);
-      updateTimelineUI();
-      updateActionButtons();
-    });
-
-    video.addEventListener('timeupdate', updateTimelineUI);
-    video.addEventListener('durationchange', updateTimelineUI);
-    video.addEventListener('play', updateTimelineUI);
-    video.addEventListener('pause', updateTimelineUI);
-
-    playPauseBtn.addEventListener('click', async () => {
-      if (!video.src) return;
-      if (video.paused) await video.play();
-      else video.pause();
-      updateTimelineUI();
-    });
-
-    timeline.addEventListener('input', () => {
-      isScrubbing = true;
-      video.currentTime = Number(timeline.value);
-      lastProcessedFrame = -1;
-      updateTimelineUI();
-      drawOverlay([]);
-    });
-
-    timeline.addEventListener('change', () => {
-      isScrubbing = false;
-      video.currentTime = Number(timeline.value);
-      lastProcessedFrame = -1;
-      updateTimelineUI();
-      if (loadedDetectorType && video.videoWidth) scanFrame(false);
-    });
-
-    back10Btn.addEventListener('click', () => seekBy(-10));
-    back1Btn.addEventListener('click', () => seekBy(-1));
-    forward1Btn.addEventListener('click', () => seekBy(1));
-    forward10Btn.addEventListener('click', () => seekBy(10));
-    window.addEventListener('resize', resizeOverlay);
-
-    detectorSelect.addEventListener('change', () => {
-      loadedDetectorType = null;
-      scanBtn.disabled = true;
-      autoBtn.disabled = true;
-      drawOverlay([]);
-      loadModelBtn.disabled = false;
-      loadModelBtn.textContent = 'Load selected model';
-      setStatus('Detection model changed. Click Load selected model.');
-    });
-
-    loadModelBtn.addEventListener('click', async () => {
-      const type = detectorSelect.value;
-      loadModelBtn.disabled = true;
       try {
-        await tf.setBackend('webgl');
-        await tf.ready();
-        if (type === 'skeleton') {
-          setStatus('Loading MoveNet MultiPose Lightning skeleton model...');
-          if (!skeletonDetector) {
-            skeletonDetector = await poseDetection.createDetector(
+        const mode = modeSelect.value;
+        const results = [];
+        if (mode === 'person') {
+          if (!personDetector) personDetector = await cocoSsd.load({ base: 'mobilenet_v2' });
+          const preds = await personDetector.detect(video);
+          const people = preds.filter(p => p.class === 'person' && p.score >= Number(threshold.value));
+          for (const p of people) {
+            const headRect = personHeadRect(p.bbox);
+            const pred = await classifyRect(headRect);
+            results.push({ personRect: { x:p.bbox[0], y:p.bbox[1], w:p.bbox[2], h:p.bbox[3] }, personLabel: `${Math.round(p.score * 100)}%`, headRect, pred });
+          }
+          if (overlay.stats.checked) setStatus(`Person mode: ${people.length} people | every ${every} frame(s) | ${resolutionSelect.value}p`);
+        } else {
+          if (!poseDetector) {
+            poseDetector = await poseDetection.createDetector(
               poseDetection.SupportedModels.MoveNet,
               { modelType: poseDetection.movenet.modelType.MULTIPOSE_LIGHTNING }
             );
           }
-          loadedDetectorType = 'skeleton';
-          setStatus('Skeleton model loaded. Scan a paused frame or start auto export.');
-        } else {
-          setStatus('Loading COCO-SSD person detector...');
-          if (!personDetector) {
-            personDetector = await cocoSsd.load({ base: 'mobilenet_v2' });
+          const posesRaw = await poseDetector.estimatePoses(video, { maxPoses: 20, flipHorizontal: false });
+          const poses = posesRaw.filter(p => (p.score == null || p.score >= Number(threshold.value)) && skeletonHeadRect(p));
+          for (let i = 0; i < poses.length; i++) {
+            const headRect = skeletonHeadRect(poses[i]);
+            const pred = await classifyRect(headRect);
+            results.push({ pose: poses[i], index: i, headRect, pred });
           }
-          loadedDetectorType = 'coco';
-          setStatus('COCO person detector loaded. Scan a paused frame or start auto export.');
+          if (overlay.stats.checked) setStatus(`Skeleton mode: ${poses.length} poses | every ${every} frame(s) | ${resolutionSelect.value}p`);
         }
-        loadModelBtn.textContent = 'Model loaded';
-        updateActionButtons();
+        lastResults = results;
+        await drawResults(results);
       } catch (err) {
-        setStatus('Model load error: ' + err.message);
-        loadModelBtn.disabled = false;
+        console.error(err);
+        setStatus('Detection error: ' + err.message, true);
+      }
+      requestAnimationFrame(runDetection);
+    }
+
+    async function startCamera() {
+      isRunning = false;
+      if (stream) stream.getTracks().forEach(t => t.stop());
+      stream = null;
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      const h = Number(resolutionSelect.value);
+      const w = Math.round(h * 16 / 9);
+      setStatus('Starting camera...');
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: { facingMode: 'environment', width: { ideal: w }, height: { ideal: h } }
+        });
+        video.srcObject = stream;
+        await new Promise(resolve => video.onloadedmetadata = resolve);
+        await video.play();
+        if (currentLens === 'ultrawide') {
+          const track = stream.getVideoTracks()[0];
+          const cap = track.getCapabilities ? track.getCapabilities() : {};
+          if (cap.zoom) await track.applyConstraints({ advanced: [{ zoom: cap.zoom.min }] });
+        }
+        resizeCanvas();
+        isRunning = true;
+        frameCounter = 0;
+        setStatus('Camera running. Loading detector on first frame...');
+        requestAnimationFrame(runDetection);
+      } catch (err) {
+        setStatus('Camera error: ' + err.message, true);
+      }
+    }
+
+    async function init() {
+      syncLabels();
+      resizeCanvas();
+      try { await tf.setBackend('webgl'); await tf.ready(); } catch(e) { console.warn(e); }
+      await startCamera();
+    }
+
+    drawerTab.addEventListener('click', () => {
+      drawer.classList.toggle('open');
+      drawerTab.textContent = drawer.classList.contains('open') ? '›' : '‹';
+    });
+
+    lensToggle.addEventListener('click', async () => {
+      currentLens = currentLens === 'ultrawide' ? 'normal' : 'ultrawide';
+      syncLabels();
+      await startCamera();
+    });
+
+    resolutionSelect.addEventListener('change', startCamera);
+    reloadCameraBtn.addEventListener('click', startCamera);
+    frameStep.addEventListener('input', syncLabels);
+    threshold.addEventListener('input', syncLabels);
+    cropScale.addEventListener('input', syncLabels);
+    modeSelect.addEventListener('change', () => { lastResults = []; setStatus('Switched detection mode. Loading detector on next frame...'); });
+    window.addEventListener('resize', resizeCanvas);
+
+    loadClassifierBtn.addEventListener('click', async () => {
+      loadClassifierBtn.disabled = true;
+      setStatus('Loading classifier from ./model/model.json...');
+      try {
+        headbandModel = await tf.loadLayersModel('./model/model.json');
+        setStatus('Classifier loaded. Predictions will appear on head crops.');
+      } catch (err) {
+        console.error(err);
+        setStatus('Classifier load failed: ' + err.message, true);
+        loadClassifierBtn.disabled = false;
       }
     });
 
-    scanBtn.addEventListener('click', () => scanFrame(true));
-
-    autoBtn.addEventListener('click', async () => {
-      if (!loadedDetectorType || !video.videoWidth) return;
-      autoRunning = !autoRunning;
-      if (autoRunning) {
-        autoBtn.textContent = 'Stop auto export';
-        video.playbackRate = Number(autoSpeed.value);
-        setStatus(`Auto export running at ${video.playbackRate}x. Lower speed if detections miss people.`);
-        if (video.paused) await video.play();
-        autoLoop();
-      } else {
-        autoBtn.textContent = 'Start auto export';
-        video.playbackRate = 1;
-        setStatus('Auto export stopped.');
-      }
-    });
-
-    autoSpeed.addEventListener('change', () => {
-      if (autoRunning) video.playbackRate = Number(autoSpeed.value);
-    });
-
-    clearBtn.addEventListener('click', () => {
-      savedCrops = [];
-      refreshPreview();
-      setStatus('Cleared saved crops.');
-    });
-
-    applyBulkBtn.addEventListener('click', () => applyLabelToSelected(bulkLabelSelect.value));
-    deleteSelectedBtn.addEventListener('click', deleteSelected);
-    selectAllBtn.addEventListener('click', () => { savedCrops.forEach(c => c.selected = true); refreshPreview(); });
-    selectNoneBtn.addEventListener('click', () => { savedCrops.forEach(c => c.selected = false); refreshPreview(); });
-
-    document.addEventListener('keydown', (e) => {
-      if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
-      if (e.key === '1') applyLabelToSelected('headband');
-      if (e.key === '2') applyLabelToSelected('no_headband');
-      if (e.key === '3') applyLabelToSelected('unsure');
-      if (e.key === 'Delete' || e.key === 'Backspace') deleteSelected();
-    });
-
-    downloadBtn.addEventListener('click', async () => {
-      if (!savedCrops.length) return;
-      setStatus('Building ZIP...');
-      const zip = new JSZip();
-      for (const crop of savedCrops) {
-        zip.file(`${crop.label}/${crop.name}`, crop.blob);
-      }
-      const manifest = savedCrops.map(c => ({
-        label: c.label,
-        mode: c.mode,
-        detector: c.detectorType,
-        filename: `${c.label}/${c.name}`
-      }));
-      zip.file('manifest.json', JSON.stringify(manifest, null, 2));
-      const zipBlob = await zip.generateAsync({ type: 'blob' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(zipBlob);
-      a.download = `headband_dataset_${Date.now()}.zip`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setStatus('ZIP downloaded. Upload the ZIP to Roboflow as a classification dataset.');
-    });
+    init();
   </script>
 </body>
 </html>
