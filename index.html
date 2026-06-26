@@ -8,110 +8,98 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <style>
     * { box-sizing: border-box; }
-    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #000; color: #fff; font-family: Arial, sans-serif; }
-    #app { position: fixed; inset: 0; background: #000; }
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #000; font-family: Arial, sans-serif; color: #fff; }
+    .app { position: fixed; inset: 0; overflow: hidden; background: #000; }
     video, canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
     #status {
       position: fixed; top: env(safe-area-inset-top, 0); left: 0; right: 0; z-index: 20;
-      padding: 8px 46px 8px 10px; background: rgba(0,0,0,.65); color: #fff;
-      font-size: 13px; text-align: center; line-height: 1.25;
+      padding: 8px 48px 8px 10px; background: rgba(0,0,0,0.65); color: #fff;
+      font-size: 13px; text-align: center; min-height: 32px;
     }
     #drawerTab {
-      position: fixed; top: 50%; right: 0; transform: translateY(-50%); z-index: 40;
-      width: 34px; height: 74px; border: 1px solid rgba(255,255,255,.28); border-right: none;
-      border-radius: 14px 0 0 14px; background: rgba(45,108,223,.95); color: #fff;
-      display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 700;
-      cursor: pointer; user-select: none;
+      position: fixed; right: 0; top: 50%; transform: translateY(-50%); z-index: 31;
+      width: 30px; height: 70px; border-radius: 12px 0 0 12px; border: 1px solid rgba(255,255,255,0.25); border-right: 0;
+      background: rgba(45,108,223,0.95); color: white; font-size: 24px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
     }
     #drawer {
-      position: fixed; top: 0; right: 0; bottom: 0; z-index: 35;
-      width: min(330px, 86vw); padding: calc(env(safe-area-inset-top, 0px) + 46px) 14px 18px;
-      background: rgba(18,18,18,.96); border-left: 1px solid #333; overflow-y: auto;
-      transform: translateX(100%); transition: transform .22s ease;
-      box-shadow: -12px 0 30px rgba(0,0,0,.45);
+      position: fixed; top: 0; right: 0; bottom: 0; z-index: 30;
+      width: min(330px, 88vw); padding: calc(env(safe-area-inset-top, 0) + 14px) 14px calc(env(safe-area-inset-bottom, 0) + 14px);
+      background: rgba(20,20,20,0.96); border-left: 1px solid rgba(255,255,255,0.15);
+      transform: translateX(100%); transition: transform 180ms ease; overflow-y: auto;
     }
     #drawer.open { transform: translateX(0); }
-    #drawer h2 { margin: 0 0 12px; font-size: 18px; }
-    .section { border-top: 1px solid #333; padding-top: 12px; margin-top: 12px; }
-    label { display: block; margin: 9px 0 5px; font-size: 13px; color: #ddd; }
+    #drawer.open + #drawerTab { right: min(330px, 88vw); }
+    h2 { font-size: 17px; margin: 0 0 12px; }
+    .group { border-top: 1px solid rgba(255,255,255,0.15); padding-top: 12px; margin-top: 12px; }
+    label { display: block; font-size: 12px; color: #ccc; margin: 0 0 5px; }
     select, button, input[type="range"] { width: 100%; }
     select, button {
-      border: 1px solid #444; border-radius: 9px; background: #262626; color: #fff;
-      padding: 10px; font-size: 14px;
+      padding: 10px; border: 1px solid #444; border-radius: 9px; background: #272727; color: white; font-size: 14px;
     }
-    button { background: #2d6cdf; border: none; font-weight: 700; cursor: pointer; }
-    button.secondary { background: #444; }
-    button.danger { background: #8f2d2d; }
-    .row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
-    .value { font-size: 12px; color: #bbb; min-width: 52px; text-align: right; }
-    .check { display: grid; grid-template-columns: 24px 1fr; gap: 6px; align-items: center; margin: 7px 0; font-size: 13px; color: #ddd; }
-    .check input { width: 18px; height: 18px; }
-    .tiny { color: #aaa; font-size: 12px; line-height: 1.35; margin-top: 8px; }
-    .pill { display: inline-block; padding: 2px 6px; border-radius: 999px; background: #222; border: 1px solid #444; font-size: 12px; color: #ddd; }
+    button { background: #2d6cdf; font-weight: 700; border: 0; }
+    .row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; margin: 10px 0; }
+    .checkrow { display: flex; gap: 8px; align-items: center; margin: 8px 0; font-size: 13px; color: #ddd; }
+    .checkrow input { width: auto; }
+    .value { font-size: 13px; color: #ddd; min-width: 46px; text-align: right; }
+    .hint { font-size: 12px; color: #aaa; line-height: 1.35; margin-top: 8px; }
+    .pill { display: inline-block; padding: 2px 7px; border-radius: 999px; background: #333; font-size: 12px; color: #ddd; }
   </style>
 </head>
 <body>
-  <div id="app">
+  <div class="app">
     <video id="video" autoplay playsinline muted></video>
     <canvas id="canvas"></canvas>
   </div>
-
   <div id="status">Starting...</div>
-  <button id="drawerTab" aria-label="open options">‹</button>
 
   <aside id="drawer">
-    <h2>Tracker Options</h2>
+    <h2>Headband Tracker</h2>
 
-    <div class="section">
-      <label for="modeSelect">Detection mode</label>
-      <select id="modeSelect">
-        <option value="person">Person detection / COCO-SSD</option>
-        <option value="skeleton">Skeleton pose / MoveNet</option>
+    <div>
+      <label for="detectionMode">Detection mode</label>
+      <select id="detectionMode">
+        <option value="person">Person detection boxes</option>
+        <option value="skeleton">Skeleton pose detection</option>
       </select>
+    </div>
 
-      <label for="lensToggle">Camera lens</label>
+    <div class="group">
+      <label>Camera lens</label>
       <button id="lensToggle">Lens: Ultrawide</button>
-
-      <label for="resolutionSelect">Resolution</label>
-      <select id="resolutionSelect">
-        <option value="480">480p</option>
-        <option value="720" selected>720p</option>
-        <option value="1080">1080p</option>
-      </select>
+      <div class="hint">Ultrawide uses the smallest available zoom when supported.</div>
     </div>
 
-    <div class="section">
-      <div class="row"><label for="frameStep">Detect every N frames</label><span id="frameStepValue" class="value">2</span></div>
-      <input id="frameStep" type="range" min="1" max="10" value="2" />
-
-      <div class="row"><label for="threshold">Detection threshold</label><span id="thresholdValue" class="value">0.40</span></div>
-      <input id="threshold" type="range" min="0.10" max="0.90" step="0.05" value="0.40" />
-
-      <div class="row"><label for="cropScale">Head crop size</label><span id="cropScaleValue" class="value">1.80</span></div>
-      <input id="cropScale" type="range" min="1.0" max="3.0" step="0.1" value="1.8" />
+    <div class="group">
+      <label for="resolutionSlider">Resolution</label>
+      <div class="row"><input id="resolutionSlider" type="range" min="0" max="2" value="1" step="1"><div id="resolutionValue" class="value">720p</div></div>
+      <label for="detectEvery">Detect every N frames</label>
+      <div class="row"><input id="detectEvery" type="range" min="1" max="10" value="2" step="1"><div id="detectEveryValue" class="value">2</div></div>
     </div>
 
-    <div class="section">
+    <div class="group">
+      <label>Classifier</label>
+      <div class="checkrow"><input id="enableClassifier" type="checkbox" checked> <span>Run headband model</span></div>
+      <label for="thresholdSlider">Headband threshold</label>
+      <div class="row"><input id="thresholdSlider" type="range" min="0.05" max="0.95" value="0.65" step="0.05"><div id="thresholdValue" class="value">0.65</div></div>
+      <div class="hint">Model path: <span class="pill">./model/model.json</span></div>
+    </div>
+
+    <div class="group">
       <label>Overlays</label>
-      <div class="check"><input id="showPersonBoxes" type="checkbox" checked><span>Person boxes</span></div>
-      <div class="check"><input id="showConfidence" type="checkbox" checked><span>Confidence / classifier labels</span></div>
-      <div class="check"><input id="showSkeleton" type="checkbox" checked><span>Skeleton lines</span></div>
-      <div class="check"><input id="showKeypoints" type="checkbox" checked><span>Keypoints</span></div>
-      <div class="check"><input id="showPoseLabels" type="checkbox" checked><span>Pose labels</span></div>
-      <div class="check"><input id="showHeadCrops" type="checkbox" checked><span>Head crop boxes</span></div>
-      <div class="check"><input id="showCropCenters" type="checkbox"><span>Crop centers</span></div>
-      <div class="check"><input id="showStats" type="checkbox" checked><span>Status stats</span></div>
+      <div class="checkrow"><input id="showPersonBoxes" type="checkbox" checked> <span>Person boxes</span></div>
+      <div class="checkrow"><input id="showHeadBoxes" type="checkbox" checked> <span>Head crop boxes</span></div>
+      <div class="checkrow"><input id="showLabels" type="checkbox" checked> <span>Prediction labels</span></div>
+      <div class="checkrow"><input id="showSkeleton" type="checkbox" checked> <span>Skeleton/keypoints</span></div>
+      <div class="checkrow"><input id="showCenters" type="checkbox"> <span>Crop centers</span></div>
+      <div class="checkrow"><input id="showDebug" type="checkbox" checked> <span>Status/debug text</span></div>
     </div>
 
-    <div class="section">
-      <button id="reloadCameraBtn" class="secondary">Restart camera</button>
-      <button id="loadClassifierBtn" style="margin-top:8px;">Load classifier</button>
-      <div class="tiny">
-        Classifier path: <span class="pill">./model/model.json</span><br>
-        Use this only after your TF.js model files are uploaded.
-      </div>
+    <div class="group">
+      <button id="restartBtn">Restart camera</button>
     </div>
   </aside>
+  <button id="drawerTab" aria-label="Open options">‹</button>
 
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
@@ -125,68 +113,59 @@
     const drawer = document.getElementById('drawer');
     const drawerTab = document.getElementById('drawerTab');
 
-    const modeSelect = document.getElementById('modeSelect');
+    const detectionMode = document.getElementById('detectionMode');
     const lensToggle = document.getElementById('lensToggle');
-    const resolutionSelect = document.getElementById('resolutionSelect');
-    const frameStep = document.getElementById('frameStep');
-    const frameStepValue = document.getElementById('frameStepValue');
-    const threshold = document.getElementById('threshold');
+    const resolutionSlider = document.getElementById('resolutionSlider');
+    const resolutionValue = document.getElementById('resolutionValue');
+    const detectEvery = document.getElementById('detectEvery');
+    const detectEveryValue = document.getElementById('detectEveryValue');
+    const enableClassifier = document.getElementById('enableClassifier');
+    const thresholdSlider = document.getElementById('thresholdSlider');
     const thresholdValue = document.getElementById('thresholdValue');
-    const cropScale = document.getElementById('cropScale');
-    const cropScaleValue = document.getElementById('cropScaleValue');
-    const reloadCameraBtn = document.getElementById('reloadCameraBtn');
-    const loadClassifierBtn = document.getElementById('loadClassifierBtn');
+    const showPersonBoxes = document.getElementById('showPersonBoxes');
+    const showHeadBoxes = document.getElementById('showHeadBoxes');
+    const showLabels = document.getElementById('showLabels');
+    const showSkeleton = document.getElementById('showSkeleton');
+    const showCenters = document.getElementById('showCenters');
+    const showDebug = document.getElementById('showDebug');
+    const restartBtn = document.getElementById('restartBtn');
 
-    const overlay = {
-      personBoxes: document.getElementById('showPersonBoxes'),
-      confidence: document.getElementById('showConfidence'),
-      skeleton: document.getElementById('showSkeleton'),
-      keypoints: document.getElementById('showKeypoints'),
-      poseLabels: document.getElementById('showPoseLabels'),
-      headCrops: document.getElementById('showHeadCrops'),
-      cropCenters: document.getElementById('showCropCenters'),
-      stats: document.getElementById('showStats')
-    };
-
-    let stream = null;
+    let currentStream = null;
     let personDetector = null;
     let poseDetector = null;
     let headbandModel = null;
     let isRunning = false;
-    let frameCounter = 0;
     let currentLens = 'ultrawide';
-    let lastResults = [];
+    let frameIndex = 0;
+    let lastDetections = [];
+    let busy = false;
+    let lastFpsTime = performance.now();
+    let fpsFrames = 0;
+    let fps = 0;
+    let modelClassNames = ['headband', 'no_headband'];
 
-    const EDGES = [
-      ['nose','left_eye'], ['nose','right_eye'], ['left_eye','left_ear'], ['right_eye','right_ear'],
-      ['left_shoulder','right_shoulder'], ['left_shoulder','left_elbow'], ['left_elbow','left_wrist'],
-      ['right_shoulder','right_elbow'], ['right_elbow','right_wrist'], ['left_shoulder','left_hip'],
-      ['right_shoulder','right_hip'], ['left_hip','right_hip'], ['left_hip','left_knee'],
-      ['left_knee','left_ankle'], ['right_hip','right_knee'], ['right_knee','right_ankle']
+    const resolutionMap = [
+      { label: '480p', width: 854, height: 480 },
+      { label: '720p', width: 1280, height: 720 },
+      { label: '1080p', width: 1920, height: 1080 }
     ];
 
-    function setStatus(text, error=false) {
+    function status(text, error = false) {
+      if (!showDebug.checked && !error) { statusEl.style.display = 'none'; return; }
+      statusEl.style.display = 'block';
       statusEl.textContent = text;
-      statusEl.style.background = error ? 'rgba(120,0,0,.8)' : 'rgba(0,0,0,.65)';
-    }
-
-    function syncLabels() {
-      frameStepValue.textContent = frameStep.value;
-      thresholdValue.textContent = Number(threshold.value).toFixed(2);
-      cropScaleValue.textContent = Number(cropScale.value).toFixed(2);
-      lensToggle.textContent = `Lens: ${currentLens === 'ultrawide' ? 'Ultrawide' : 'Normal'}`;
+      statusEl.style.background = error ? 'rgba(120,0,0,0.85)' : 'rgba(0,0,0,0.65)';
     }
 
     function resizeCanvas() {
-      canvas.width = canvas.clientWidth || window.innerWidth;
-      canvas.height = canvas.clientHeight || window.innerHeight;
+      canvas.width = canvas.offsetWidth;
+      canvas.height = canvas.offsetHeight;
     }
 
     function getCoverDimensions() {
       const screenW = canvas.width, screenH = canvas.height;
       const videoW = video.videoWidth || 16, videoH = video.videoHeight || 9;
-      const screenRatio = screenW / screenH;
-      const videoRatio = videoW / videoH;
+      const screenRatio = screenW / screenH, videoRatio = videoW / videoH;
       let drawW, drawH, offsetX, offsetY;
       if (screenRatio > videoRatio) {
         drawW = screenW; drawH = screenW / videoRatio; offsetX = 0; offsetY = (screenH - drawH) / 2;
@@ -196,251 +175,266 @@
       return { drawW, drawH, offsetX, offsetY, scaleX: drawW / videoW, scaleY: drawH / videoH };
     }
 
-    function clampRect(r) {
-      const maxW = video.videoWidth, maxH = video.videoHeight;
-      const x = Math.max(0, Math.min(r.x, maxW - 1));
-      const y = Math.max(0, Math.min(r.y, maxH - 1));
-      const w = Math.max(1, Math.min(r.w, maxW - x));
-      const h = Math.max(1, Math.min(r.h, maxH - y));
-      return { x, y, w, h };
+    function toScreenRect(rect) {
+      const d = getCoverDimensions();
+      return { x: rect.x * d.scaleX + d.offsetX, y: rect.y * d.scaleY + d.offsetY, w: rect.w * d.scaleX, h: rect.h * d.scaleY };
+    }
+
+    function clampRect(x, y, w, h) {
+      const maxW = video.videoWidth || 1, maxH = video.videoHeight || 1;
+      const nx = Math.max(0, Math.min(x, maxW - 1));
+      const ny = Math.max(0, Math.min(y, maxH - 1));
+      const nw = Math.max(1, Math.min(w, maxW - nx));
+      const nh = Math.max(1, Math.min(h, maxH - ny));
+      return { x: nx, y: ny, w: nw, h: nh };
     }
 
     function personHeadRect(bbox) {
       const [x, y, w, h] = bbox;
-      const cropH = h * 0.30;
-      const scale = Number(cropScale.value);
-      const side = Math.max(w * 0.72, cropH) * scale;
-      return clampRect({ x: x + w / 2 - side / 2, y: y + h * 0.02, w: side, h: side });
+      const headH = h * 0.28;
+      const padX = w * 0.08;
+      const padTop = h * 0.03;
+      return clampRect(x - padX, y + padTop, w + padX * 2, headH);
     }
 
     function kpMap(pose) {
-      const m = {};
-      for (const kp of pose.keypoints || []) m[kp.name] = kp;
-      return m;
+      const out = {};
+      for (const kp of pose.keypoints || []) out[kp.name] = kp;
+      return out;
     }
 
-    function goodKp(kp) { return kp && (kp.score == null || kp.score >= 0.25); }
+    function goodKp(kp, min = 0.25) {
+      return kp && (kp.score == null || kp.score >= min);
+    }
 
     function skeletonHeadRect(pose) {
       const k = kpMap(pose);
-      const head = [k.nose, k.left_eye, k.right_eye, k.left_ear, k.right_ear].filter(goodKp);
+      const head = [k.nose, k.left_eye, k.right_eye, k.left_ear, k.right_ear].filter(p => goodKp(p));
+      const shoulders = [k.left_shoulder, k.right_shoulder].filter(p => goodKp(p));
       if (!head.length) return null;
-      const shoulders = [k.left_shoulder, k.right_shoulder].filter(goodKp);
       const xs = head.map(p => p.x), ys = head.map(p => p.y);
-      const minX = Math.min(...xs), maxX = Math.max(...xs);
-      const minY = Math.min(...ys), maxY = Math.max(...ys);
-      const shoulderWidth = shoulders.length === 2 ? Math.abs(shoulders[0].x - shoulders[1].x) : 0;
-      const faceWidth = Math.max(maxX - minX, shoulderWidth * 0.34, 32);
-      const side = faceWidth * Number(cropScale.value);
+      let minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+      const shoulderW = shoulders.length === 2 ? Math.abs(shoulders[0].x - shoulders[1].x) : 0;
+      const faceW = Math.max(maxX - minX, shoulderW * 0.33, 32);
+      const size = faceW * 1.9;
       const cx = (minX + maxX) / 2;
-      const cy = (minY + maxY) / 2 + side * 0.08;
-      return clampRect({ x: cx - side / 2, y: cy - side / 2, w: side, h: side });
+      const cy = (minY + maxY) / 2 + size * 0.08;
+      return clampRect(cx - size / 2, cy - size / 2, size, size);
     }
 
-    async function classifyRect(rect) {
-      if (!headbandModel) return null;
-      try {
-        return tf.tidy(() => {
-          const pixels = tf.browser.fromPixels(video);
-          const box = [rect.y / video.videoHeight, rect.x / video.videoWidth, (rect.y + rect.h) / video.videoHeight, (rect.x + rect.w) / video.videoWidth];
-          const crop = tf.image.cropAndResize(pixels.expandDims(0), [box], [0], [224, 224]);
-          const out = headbandModel.predict(crop);
-          return out.dataSync();
-        });
-      } catch (e) {
-        console.warn('classifier error', e);
-        return null;
-      }
+    async function classifyHead(rect) {
+      if (!headbandModel || !enableClassifier.checked) return null;
+      return tf.tidy(() => {
+        const input = tf.browser.fromPixels(video)
+          .slice([Math.floor(rect.y), Math.floor(rect.x), 0], [Math.floor(rect.h), Math.floor(rect.w), 3])
+          .resizeBilinear([224, 224])
+          .expandDims(0);
+        const pred = headbandModel.predict(input);
+        return pred.dataSync();
+      });
     }
 
-    function drawBox(rect, color, label) {
+    function classifyLabel(probs) {
+      if (!probs) return { label: 'unclassified', score: 0, headbandScore: 0 };
+      let headbandIdx = modelClassNames.indexOf('headband');
+      if (headbandIdx < 0) headbandIdx = 0;
+      const hb = Number(probs[headbandIdx] || 0);
+      const threshold = Number(thresholdSlider.value);
+      return { label: hb >= threshold ? 'headband' : 'no_headband', score: hb, headbandScore: hb };
+    }
+
+    function drawText(text, x, y, bg = 'rgba(0,0,0,0.65)', color = '#fff') {
+      ctx.font = '14px Arial';
+      const pad = 4;
+      const m = ctx.measureText(text);
+      ctx.fillStyle = bg;
+      ctx.fillRect(x, y - 16, m.width + pad * 2, 20);
+      ctx.fillStyle = color;
+      ctx.fillText(text, x + pad, y - 2);
+    }
+
+    function drawSkeleton(pose) {
+      const pairs = poseDetection.util.getAdjacentPairs(poseDetection.SupportedModels.MoveNet);
       const d = getCoverDimensions();
-      const x = rect.x * d.scaleX + d.offsetX;
-      const y = rect.y * d.scaleY + d.offsetY;
-      const w = rect.w * d.scaleX;
-      const h = rect.h * d.scaleY;
-      ctx.strokeStyle = color;
       ctx.lineWidth = 2;
-      ctx.strokeRect(x, y, w, h);
-      if (label && overlay.confidence.checked) {
-        ctx.fillStyle = color;
-        ctx.font = '14px Arial';
-        ctx.fillText(label, x + 4, Math.max(16, y - 6));
-      }
-      if (overlay.cropCenters.checked) {
-        ctx.fillStyle = color;
+      ctx.strokeStyle = 'rgba(0,255,0,0.85)';
+      for (const [i, j] of pairs) {
+        const a = pose.keypoints[i], b = pose.keypoints[j];
+        if (!goodKp(a) || !goodKp(b)) continue;
         ctx.beginPath();
-        ctx.arc(x + w / 2, y + h / 2, 4, 0, Math.PI * 2);
+        ctx.moveTo(a.x * d.scaleX + d.offsetX, a.y * d.scaleY + d.offsetY);
+        ctx.lineTo(b.x * d.scaleX + d.offsetX, b.y * d.scaleY + d.offsetY);
+        ctx.stroke();
+      }
+      for (const kp of pose.keypoints || []) {
+        if (!goodKp(kp)) continue;
+        ctx.fillStyle = ['nose','left_eye','right_eye','left_ear','right_ear'].includes(kp.name) ? 'red' : 'lime';
+        ctx.beginPath();
+        ctx.arc(kp.x * d.scaleX + d.offsetX, kp.y * d.scaleY + d.offsetY, 3, 0, Math.PI * 2);
         ctx.fill();
       }
     }
 
-    function drawSkeleton(pose, idx) {
-      const d = getCoverDimensions();
-      const k = kpMap(pose);
-      if (overlay.skeleton.checked) {
-        ctx.strokeStyle = 'lime'; ctx.lineWidth = 2;
-        for (const [a,b] of EDGES) {
-          if (!goodKp(k[a]) || !goodKp(k[b])) continue;
-          ctx.beginPath();
-          ctx.moveTo(k[a].x * d.scaleX + d.offsetX, k[a].y * d.scaleY + d.offsetY);
-          ctx.lineTo(k[b].x * d.scaleX + d.offsetX, k[b].y * d.scaleY + d.offsetY);
-          ctx.stroke();
-        }
-      }
-      if (overlay.keypoints.checked) {
-        for (const kp of pose.keypoints || []) {
-          if (!goodKp(kp)) continue;
-          ctx.fillStyle = ['nose','left_eye','right_eye','left_ear','right_ear'].includes(kp.name) ? 'red' : 'lime';
-          ctx.beginPath();
-          ctx.arc(kp.x * d.scaleX + d.offsetX, kp.y * d.scaleY + d.offsetY, 3, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-      if (overlay.poseLabels.checked && goodKp(k.nose)) {
-        ctx.fillStyle = 'white'; ctx.font = '14px Arial';
-        ctx.fillText(`Pose ${idx + 1}`, k.nose.x * d.scaleX + d.offsetX + 5, k.nose.y * d.scaleY + d.offsetY - 10);
-      }
-    }
-
-    async function drawResults(results) {
+    function drawDetections(items) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      for (const item of results) {
-        const pred = item.pred;
-        let color = 'yellow';
-        let label = item.label || '';
-        if (pred) {
-          const headband = pred[0];
-          const noHeadband = pred[1];
-          const isHeadband = headband >= noHeadband;
-          color = isHeadband ? 'cyan' : 'yellow';
-          label = `${isHeadband ? 'headband' : 'no_headband'} ${Math.round(Math.max(headband, noHeadband) * 100)}%`;
+      const d = getCoverDimensions();
+      for (const item of items) {
+        const isHeadband = item.result && item.result.label === 'headband';
+        const color = isHeadband ? '#00ff66' : '#ffd400';
+        if (item.type === 'person' && showPersonBoxes.checked && item.personRect) {
+          const r = toScreenRect(item.personRect);
+          ctx.strokeStyle = 'rgba(0,255,0,0.85)'; ctx.lineWidth = 2; ctx.strokeRect(r.x, r.y, r.w, r.h);
         }
-        if (item.personRect && overlay.personBoxes.checked) drawBox(item.personRect, 'lime', item.personLabel);
-        if (item.pose) drawSkeleton(item.pose, item.index || 0);
-        if (item.headRect && overlay.headCrops.checked) drawBox(item.headRect, color, label);
+        if (item.type === 'pose' && showSkeleton.checked && item.pose) drawSkeleton(item.pose);
+        if (showHeadBoxes.checked && item.headRect) {
+          const r = toScreenRect(item.headRect);
+          ctx.strokeStyle = color; ctx.lineWidth = isHeadband ? 4 : 2; ctx.strokeRect(r.x, r.y, r.w, r.h);
+          if (showCenters.checked) {
+            ctx.fillStyle = color; ctx.beginPath(); ctx.arc(r.x + r.w / 2, r.y + r.h / 2, 4, 0, Math.PI * 2); ctx.fill();
+          }
+          if (showLabels.checked) {
+            const text = item.result ? `${item.result.label} ${(item.result.headbandScore * 100).toFixed(0)}%` : 'no model';
+            drawText(text, r.x, Math.max(18, r.y - 4), isHeadband ? 'rgba(0,120,40,0.85)' : 'rgba(0,0,0,0.65)');
+          }
+        }
       }
     }
 
-    async function runDetection() {
-      if (!isRunning || video.readyState < 2) return;
-      frameCounter++;
-      const every = Math.max(1, Number(frameStep.value));
-      if (frameCounter % every !== 0) {
-        await drawResults(lastResults);
-        requestAnimationFrame(runDetection);
-        return;
+    async function detectPersonMode() {
+      const predictions = await personDetector.detect(video);
+      const people = predictions.filter(p => p.class === 'person' && p.score > 0.4);
+      const items = [];
+      for (const p of people) {
+        const [x, y, w, h] = p.bbox;
+        const headRect = personHeadRect(p.bbox);
+        let result = null;
+        try { result = classifyLabel(await classifyHead(headRect)); } catch (e) { result = { label: 'model error', score: 0, headbandScore: 0 }; }
+        items.push({ type: 'person', personRect: { x, y, w, h }, headRect, result, score: p.score });
       }
+      return items;
+    }
 
-      try {
-        const mode = modeSelect.value;
-        const results = [];
-        if (mode === 'person') {
-          if (!personDetector) personDetector = await cocoSsd.load({ base: 'mobilenet_v2' });
-          const preds = await personDetector.detect(video);
-          const people = preds.filter(p => p.class === 'person' && p.score >= Number(threshold.value));
-          for (const p of people) {
-            const headRect = personHeadRect(p.bbox);
-            const pred = await classifyRect(headRect);
-            results.push({ personRect: { x:p.bbox[0], y:p.bbox[1], w:p.bbox[2], h:p.bbox[3] }, personLabel: `${Math.round(p.score * 100)}%`, headRect, pred });
-          }
-          if (overlay.stats.checked) setStatus(`Person mode: ${people.length} people | every ${every} frame(s) | ${resolutionSelect.value}p`);
-        } else {
-          if (!poseDetector) {
-            poseDetector = await poseDetection.createDetector(
-              poseDetection.SupportedModels.MoveNet,
-              { modelType: poseDetection.movenet.modelType.MULTIPOSE_LIGHTNING }
-            );
-          }
-          const posesRaw = await poseDetector.estimatePoses(video, { maxPoses: 20, flipHorizontal: false });
-          const poses = posesRaw.filter(p => (p.score == null || p.score >= Number(threshold.value)) && skeletonHeadRect(p));
-          for (let i = 0; i < poses.length; i++) {
-            const headRect = skeletonHeadRect(poses[i]);
-            const pred = await classifyRect(headRect);
-            results.push({ pose: poses[i], index: i, headRect, pred });
-          }
-          if (overlay.stats.checked) setStatus(`Skeleton mode: ${poses.length} poses | every ${every} frame(s) | ${resolutionSelect.value}p`);
-        }
-        lastResults = results;
-        await drawResults(results);
-      } catch (err) {
-        console.error(err);
-        setStatus('Detection error: ' + err.message, true);
+    async function detectSkeletonMode() {
+      const posesRaw = await poseDetector.estimatePoses(video, { maxPoses: 20, flipHorizontal: false });
+      const poses = posesRaw.filter(p => p.score == null || p.score >= 0.18);
+      const items = [];
+      for (const pose of poses) {
+        const headRect = skeletonHeadRect(pose);
+        if (!headRect) continue;
+        let result = null;
+        try { result = classifyLabel(await classifyHead(headRect)); } catch (e) { result = { label: 'model error', score: 0, headbandScore: 0 }; }
+        items.push({ type: 'pose', pose, headRect, result, score: pose.score || 0 });
       }
-      requestAnimationFrame(runDetection);
+      return items;
+    }
+
+    async function loop() {
+      if (!isRunning) return;
+      requestAnimationFrame(loop);
+      if (busy || video.readyState < 2) return;
+      frameIndex++;
+      fpsFrames++;
+      const now = performance.now();
+      if (now - lastFpsTime > 1000) { fps = fpsFrames; fpsFrames = 0; lastFpsTime = now; }
+      const every = Math.max(1, Number(detectEvery.value));
+      if (frameIndex % every !== 0) { drawDetections(lastDetections); return; }
+      busy = true;
+      try {
+        if (detectionMode.value === 'person') lastDetections = await detectPersonMode();
+        else lastDetections = await detectSkeletonMode();
+        drawDetections(lastDetections);
+        const hb = lastDetections.filter(d => d.result && d.result.label === 'headband').length;
+        status(`${detectionMode.value} | ${lastDetections.length} targets | ${hb} headband | ${fps} fps | model ${headbandModel ? 'on' : 'off'}`);
+      } catch (err) {
+        status('Detection error: ' + err.message, true);
+      } finally {
+        busy = false;
+      }
     }
 
     async function startCamera() {
       isRunning = false;
-      if (stream) stream.getTracks().forEach(t => t.stop());
-      stream = null;
-      ctx.clearRect(0,0,canvas.width,canvas.height);
-      const h = Number(resolutionSelect.value);
-      const w = Math.round(h * 16 / 9);
-      setStatus('Starting camera...');
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          audio: false,
-          video: { facingMode: 'environment', width: { ideal: w }, height: { ideal: h } }
-        });
-        video.srcObject = stream;
-        await new Promise(resolve => video.onloadedmetadata = resolve);
-        await video.play();
-        if (currentLens === 'ultrawide') {
-          const track = stream.getVideoTracks()[0];
-          const cap = track.getCapabilities ? track.getCapabilities() : {};
-          if (cap.zoom) await track.applyConstraints({ advanced: [{ zoom: cap.zoom.min }] });
+      if (currentStream) currentStream.getTracks().forEach(t => t.stop());
+      const res = resolutionMap[Number(resolutionSlider.value)];
+      resolutionValue.textContent = res.label;
+      lensToggle.textContent = 'Lens: ' + (currentLens === 'ultrawide' ? 'Ultrawide' : 'Normal');
+      status('Starting camera...');
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { facingMode: 'environment', width: { ideal: res.width }, height: { ideal: res.height } }
+      });
+      currentStream = stream;
+      video.srcObject = stream;
+      await new Promise(resolve => video.onloadedmetadata = resolve);
+      await video.play();
+      resizeCanvas();
+      if (currentLens === 'ultrawide') {
+        const track = stream.getVideoTracks()[0];
+        const caps = track.getCapabilities ? track.getCapabilities() : {};
+        if (caps.zoom) {
+          try { await track.applyConstraints({ advanced: [{ zoom: caps.zoom.min }] }); } catch (e) {}
         }
-        resizeCanvas();
-        isRunning = true;
-        frameCounter = 0;
-        setStatus('Camera running. Loading detector on first frame...');
-        requestAnimationFrame(runDetection);
-      } catch (err) {
-        setStatus('Camera error: ' + err.message, true);
       }
+      isRunning = true;
+      loop();
     }
 
-    async function init() {
-      syncLabels();
-      resizeCanvas();
-      try { await tf.setBackend('webgl'); await tf.ready(); } catch(e) { console.warn(e); }
-      await startCamera();
+    async function loadAllModels() {
+      status('Loading TensorFlow backend...');
+      await tf.setBackend('webgl');
+      await tf.ready();
+
+      status('Loading COCO person detector...');
+      personDetector = await cocoSsd.load({ base: 'mobilenet_v2' });
+
+      status('Loading MoveNet skeleton detector...');
+      poseDetector = await poseDetection.createDetector(
+        poseDetection.SupportedModels.MoveNet,
+        { modelType: poseDetection.movenet.modelType.MULTIPOSE_LIGHTNING }
+      );
+
+      status('Loading headband classifier...');
+      try {
+        headbandModel = await tf.loadLayersModel('./model/model.json');
+        console.log('Headband model loaded', headbandModel.inputs, headbandModel.outputs);
+      } catch (err) {
+        headbandModel = null;
+        enableClassifier.checked = false;
+        status('Headband model failed to load. Running detection only: ' + err.message, true);
+        await new Promise(r => setTimeout(r, 1500));
+      }
     }
 
     drawerTab.addEventListener('click', () => {
       drawer.classList.toggle('open');
       drawerTab.textContent = drawer.classList.contains('open') ? '›' : '‹';
     });
-
     lensToggle.addEventListener('click', async () => {
       currentLens = currentLens === 'ultrawide' ? 'normal' : 'ultrawide';
-      syncLabels();
       await startCamera();
     });
-
-    resolutionSelect.addEventListener('change', startCamera);
-    reloadCameraBtn.addEventListener('click', startCamera);
-    frameStep.addEventListener('input', syncLabels);
-    threshold.addEventListener('input', syncLabels);
-    cropScale.addEventListener('input', syncLabels);
-    modeSelect.addEventListener('change', () => { lastResults = []; setStatus('Switched detection mode. Loading detector on next frame...'); });
+    resolutionSlider.addEventListener('input', () => { resolutionValue.textContent = resolutionMap[Number(resolutionSlider.value)].label; });
+    resolutionSlider.addEventListener('change', startCamera);
+    detectEvery.addEventListener('input', () => { detectEveryValue.textContent = detectEvery.value; });
+    thresholdSlider.addEventListener('input', () => { thresholdValue.textContent = Number(thresholdSlider.value).toFixed(2); });
+    restartBtn.addEventListener('click', startCamera);
+    showDebug.addEventListener('change', () => status('Debug display changed.'));
     window.addEventListener('resize', resizeCanvas);
 
-    loadClassifierBtn.addEventListener('click', async () => {
-      loadClassifierBtn.disabled = true;
-      setStatus('Loading classifier from ./model/model.json...');
+    async function setup() {
       try {
-        headbandModel = await tf.loadLayersModel('./model/model.json');
-        setStatus('Classifier loaded. Predictions will appear on head crops.');
+        resizeCanvas();
+        detectEveryValue.textContent = detectEvery.value;
+        thresholdValue.textContent = Number(thresholdSlider.value).toFixed(2);
+        resolutionValue.textContent = resolutionMap[Number(resolutionSlider.value)].label;
+        await loadAllModels();
+        await startCamera();
       } catch (err) {
-        console.error(err);
-        setStatus('Classifier load failed: ' + err.message, true);
-        loadClassifierBtn.disabled = false;
+        status('Setup error: ' + err.message, true);
       }
-    });
+    }
 
-    init();
+    setup();
   </script>
 </body>
 </html>
