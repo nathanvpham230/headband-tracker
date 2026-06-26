@@ -83,6 +83,8 @@
       <label for="thresholdSlider">Headband threshold</label>
       <div class="row"><input id="thresholdSlider" type="range" min="0.05" max="0.95" value="0.65" step="0.05"><div id="thresholdValue" class="value">0.65</div></div>
       <div class="hint">Model path: <span class="pill">./model/model.json</span></div>
+      <button id="retryModelBtn" class="secondary" style="margin-top:8px;">Retry model load</button>
+      <div id="modelStatus" class="hint">Model status: not loaded</div>
     </div>
 
     <div class="group">
@@ -120,6 +122,8 @@
     const detectEvery = document.getElementById('detectEvery');
     const detectEveryValue = document.getElementById('detectEveryValue');
     const enableClassifier = document.getElementById('enableClassifier');
+    const retryModelBtn = document.getElementById('retryModelBtn');
+    const modelStatus = document.getElementById('modelStatus');
     const thresholdSlider = document.getElementById('thresholdSlider');
     const thresholdValue = document.getElementById('thresholdValue');
     const showPersonBoxes = document.getElementById('showPersonBoxes');
@@ -143,6 +147,8 @@
     let fpsFrames = 0;
     let fps = 0;
     let modelClassNames = ['headband', 'no_headband'];
+    let modelLoadState = 'not-loaded';
+    let modelLoadError = '';
 
     const resolutionMap = [
       { label: '480p', width: 854, height: 480 },
@@ -222,25 +228,49 @@
       return clampRect(cx - size / 2, cy - size / 2, size, size);
     }
 
+    function setModelStatus(text) {
+      if (modelStatus) modelStatus.textContent = 'Model status: ' + text;
+    }
+
     async function classifyHead(rect) {
-      if (!headbandModel || !enableClassifier.checked) return null;
-      return tf.tidy(() => {
+      if (!enableClassifier.checked) return { state: 'disabled' };
+      if (modelLoadState === 'loading') return { state: 'loading' };
+      if (!headbandModel || modelLoadState !== 'loaded') return { state: 'not-loaded' };
+
+      const x = Math.max(0, Math.floor(rect.x));
+      const y = Math.max(0, Math.floor(rect.y));
+      const w = Math.max(1, Math.floor(rect.w));
+      const h = Math.max(1, Math.floor(rect.h));
+
+      const probs = tf.tidy(() => {
         const input = tf.browser.fromPixels(video)
-          .slice([Math.floor(rect.y), Math.floor(rect.x), 0], [Math.floor(rect.h), Math.floor(rect.w), 3])
+          .slice([y, x, 0], [h, w, 3])
           .resizeBilinear([224, 224])
           .expandDims(0);
         const pred = headbandModel.predict(input);
-        return pred.dataSync();
+        return Array.from(pred.dataSync());
       });
+
+      return { state: 'ok', probs };
     }
 
-    function classifyLabel(probs) {
-      if (!probs) return { label: 'unclassified', score: 0, headbandScore: 0 };
+    function classifyLabel(classification) {
+      if (!classification || classification.state !== 'ok') {
+        const state = classification ? classification.state : 'not-loaded';
+        const labelMap = {
+          'disabled': 'model off',
+          'loading': 'model loading',
+          'not-loaded': 'model not loaded'
+        };
+        return { label: labelMap[state] || 'model error', score: 0, headbandScore: 0, systemLabel: true };
+      }
+
+      const probs = classification.probs;
       let headbandIdx = modelClassNames.indexOf('headband');
       if (headbandIdx < 0) headbandIdx = 0;
       const hb = Number(probs[headbandIdx] || 0);
       const threshold = Number(thresholdSlider.value);
-      return { label: hb >= threshold ? 'headband' : 'no_headband', score: hb, headbandScore: hb };
+      return { label: hb >= threshold ? 'headband' : 'no_headband', score: hb, headbandScore: hb, systemLabel: false };
     }
 
     function drawText(text, x, y, bg = 'rgba(0,0,0,0.65)', color = '#fff') {
@@ -293,7 +323,7 @@
             ctx.fillStyle = color; ctx.beginPath(); ctx.arc(r.x + r.w / 2, r.y + r.h / 2, 4, 0, Math.PI * 2); ctx.fill();
           }
           if (showLabels.checked) {
-            const text = item.result ? `${item.result.label} ${(item.result.headbandScore * 100).toFixed(0)}%` : 'no model';
+            const text = item.result ? (item.result.systemLabel ? item.result.label : `${item.result.label} ${(item.result.headbandScore * 100).toFixed(0)}%`) : 'no model';
             drawText(text, r.x, Math.max(18, r.y - 4), isHeadband ? 'rgba(0,120,40,0.85)' : 'rgba(0,0,0,0.65)');
           }
         }
@@ -379,6 +409,33 @@
       loop();
     }
 
+    async function loadHeadbandModel() {
+      modelLoadState = 'loading';
+      modelLoadError = '';
+      setModelStatus('loading ./model/model.json');
+      status('Loading headband classifier...');
+      try {
+        headbandModel = await tf.loadLayersModel('./model/model.json?cacheBust=' + Date.now());
+        const test = tf.tidy(() => {
+          const zeros = tf.zeros([1, 224, 224, 3]);
+          const pred = headbandModel.predict(zeros);
+          return Array.from(pred.dataSync());
+        });
+        modelLoadState = 'loaded';
+        enableClassifier.checked = true;
+        setModelStatus('loaded; test output [' + test.map(v => v.toFixed(3)).join(', ') + ']');
+        console.log('Headband model loaded', headbandModel.inputs, headbandModel.outputs, test);
+      } catch (err) {
+        headbandModel = null;
+        modelLoadState = 'failed';
+        modelLoadError = err.message || String(err);
+        enableClassifier.checked = false;
+        setModelStatus('failed - ' + modelLoadError);
+        status('Headband model failed to load. Detection still works: ' + modelLoadError, true);
+        await new Promise(r => setTimeout(r, 1500));
+      }
+    }
+
     async function loadAllModels() {
       status('Loading TensorFlow backend...');
       await tf.setBackend('webgl');
@@ -393,16 +450,7 @@
         { modelType: poseDetection.movenet.modelType.MULTIPOSE_LIGHTNING }
       );
 
-      status('Loading headband classifier...');
-      try {
-        headbandModel = await tf.loadLayersModel('./model/model.json');
-        console.log('Headband model loaded', headbandModel.inputs, headbandModel.outputs);
-      } catch (err) {
-        headbandModel = null;
-        enableClassifier.checked = false;
-        status('Headband model failed to load. Running detection only: ' + err.message, true);
-        await new Promise(r => setTimeout(r, 1500));
-      }
+      await loadHeadbandModel();
     }
 
     drawerTab.addEventListener('click', () => {
@@ -417,6 +465,7 @@
     resolutionSlider.addEventListener('change', startCamera);
     detectEvery.addEventListener('input', () => { detectEveryValue.textContent = detectEvery.value; });
     thresholdSlider.addEventListener('input', () => { thresholdValue.textContent = Number(thresholdSlider.value).toFixed(2); });
+    retryModelBtn.addEventListener('click', loadHeadbandModel);
     restartBtn.addEventListener('click', startCamera);
     showDebug.addEventListener('change', () => status('Debug display changed.'));
     window.addEventListener('resize', resizeCanvas);
