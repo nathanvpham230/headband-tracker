@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>Headband Tracker - Hugging Face</title>
+  <title>Headband Tracker - LiteRT</title>
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <style>
@@ -18,20 +18,18 @@
     }
     #drawerTab {
       position: fixed; right: 0; top: 50%; transform: translateY(-50%); z-index: 31;
-      width: 30px; height: 70px; border-radius: 12px 0 0 12px;
-      border: 1px solid rgba(255,255,255,0.25); border-right: 0;
+      width: 30px; height: 70px; border-radius: 12px 0 0 12px; border: 1px solid rgba(255,255,255,0.25); border-right: 0;
       background: rgba(45,108,223,0.95); color: white; font-size: 24px; font-weight: 700;
       display: flex; align-items: center; justify-content: center;
     }
     #drawer {
       position: fixed; top: 0; right: 0; bottom: 0; z-index: 30;
-      width: min(350px, 90vw);
-      padding: calc(env(safe-area-inset-top, 0) + 14px) 14px calc(env(safe-area-inset-bottom, 0) + 14px);
-      background: rgba(20,20,20,0.97); border-left: 1px solid rgba(255,255,255,0.15);
+      width: min(330px, 88vw); padding: calc(env(safe-area-inset-top, 0) + 14px) 14px calc(env(safe-area-inset-bottom, 0) + 14px);
+      background: rgba(20,20,20,0.96); border-left: 1px solid rgba(255,255,255,0.15);
       transform: translateX(100%); transition: transform 180ms ease; overflow-y: auto;
     }
     #drawer.open { transform: translateX(0); }
-    #drawer.open + #drawerTab { right: min(350px, 90vw); }
+    #drawer.open + #drawerTab { right: min(330px, 88vw); }
     h2 { font-size: 17px; margin: 0 0 12px; }
     .group { border-top: 1px solid rgba(255,255,255,0.15); padding-top: 12px; margin-top: 12px; }
     label { display: block; font-size: 12px; color: #ccc; margin: 0 0 5px; }
@@ -40,14 +38,11 @@
       padding: 10px; border: 1px solid #444; border-radius: 9px; background: #272727; color: white; font-size: 14px;
     }
     button { background: #2d6cdf; font-weight: 700; border: 0; }
-    button.secondary { background: #444; }
-    button:disabled { opacity: 0.45; }
     .row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; margin: 10px 0; }
     .checkrow { display: flex; gap: 8px; align-items: center; margin: 8px 0; font-size: 13px; color: #ddd; }
     .checkrow input { width: auto; }
     .value { font-size: 13px; color: #ddd; min-width: 46px; text-align: right; }
     .hint { font-size: 12px; color: #aaa; line-height: 1.35; margin-top: 8px; }
-    .warning { font-size: 12px; color: #ffd27a; line-height: 1.35; margin-top: 8px; }
     .pill { display: inline-block; padding: 2px 7px; border-radius: 999px; background: #333; font-size: 12px; color: #ddd; }
   </style>
 </head>
@@ -59,53 +54,46 @@
   <div id="status">Starting...</div>
 
   <aside id="drawer">
-    <h2>Headband Tracker - Hugging Face</h2>
+    <h2>Headband Tracker - LiteRT</h2>
 
     <div>
       <label for="detectionMode">Detection mode</label>
       <select id="detectionMode">
-        <option value="hf">Hugging Face headwear only</option>
-        <option value="person">Person boxes + Hugging Face</option>
-        <option value="skeleton">Skeleton + Hugging Face</option>
+        <option value="person">Person detection boxes</option>
+        <option value="skeleton">Skeleton pose detection</option>
       </select>
-      <div class="hint">HF-only is the lightest mode. Person/skeleton modes add localization overlays and associate detected headwear with each person.</div>
     </div>
 
     <div class="group">
       <label>Camera lens</label>
       <button id="lensToggle">Lens: Ultrawide</button>
-      <div class="hint">Starts on ultrawide. Uses the smallest available rear-camera zoom when Safari exposes zoom control.</div>
+      <div class="hint">Ultrawide uses the smallest available zoom when supported.</div>
     </div>
 
     <div class="group">
-      <label for="resolutionSlider">Camera resolution</label>
+      <label for="resolutionSlider">Resolution</label>
       <div class="row"><input id="resolutionSlider" type="range" min="0" max="2" value="1" step="1"><div id="resolutionValue" class="value">720p</div></div>
       <label for="detectEvery">Detect every N frames</label>
-      <div class="row"><input id="detectEvery" type="range" min="1" max="20" value="5" step="1"><div id="detectEveryValue" class="value">5</div></div>
+      <div class="row"><input id="detectEvery" type="range" min="1" max="10" value="2" step="1"><div id="detectEveryValue" class="value">2</div></div>
     </div>
 
     <div class="group">
-      <label>Hugging Face detector</label>
-      <div class="checkrow"><input id="enableHF" type="checkbox" checked> <span>Run headwear model</span></div>
-      <label for="thresholdSlider">Detection threshold</label>
-      <div class="row"><input id="thresholdSlider" type="range" min="0.05" max="0.90" value="0.30" step="0.05"><div id="thresholdValue" class="value">0.30</div></div>
-      <label for="nmsSlider">NMS overlap threshold</label>
-      <div class="row"><input id="nmsSlider" type="range" min="0.20" max="0.80" value="0.45" step="0.05"><div id="nmsValue" class="value">0.45</div></div>
-      <div class="hint">Browser model: <span class="pill">HF YOLOv8n Fashionpedia ONNX</span></div>
+      <label>Headband classifier (LiteRT)</label>
+      <div class="checkrow"><input id="enableClassifier" type="checkbox" checked> <span>Run TFLite headband model</span></div>
+      <label for="thresholdSlider">Headband threshold</label>
+      <div class="row"><input id="thresholdSlider" type="range" min="0.05" max="0.95" value="0.65" step="0.05"><div id="thresholdValue" class="value">0.65</div></div>
+      <div class="hint">Model path: <span class="pill">./model/headband_model.tflite</span></div>
       <button id="retryModelBtn" class="secondary" style="margin-top:8px;">Retry model load</button>
       <div id="modelStatus" class="hint">Model status: not loaded</div>
-      <div class="warning">Important: Fashionpedia class 15 combines <b>headband + head covering + hair accessory</b>. Hats, scarves, and hoods are separate classes and are not counted as headbands.</div>
     </div>
 
     <div class="group">
       <label>Overlays</label>
       <div class="checkrow"><input id="showPersonBoxes" type="checkbox" checked> <span>Person boxes</span></div>
-      <div class="checkrow"><input id="showHeadBoxes" type="checkbox" checked> <span>Estimated head boxes</span></div>
-      <div class="checkrow"><input id="showHFBoxes" type="checkbox" checked> <span>Hugging Face detection boxes</span></div>
-      <div class="checkrow"><input id="showOtherHeadwear" type="checkbox"> <span>Show hats/scarves/hoods</span></div>
+      <div class="checkrow"><input id="showHeadBoxes" type="checkbox" checked> <span>Head crop boxes</span></div>
       <div class="checkrow"><input id="showLabels" type="checkbox" checked> <span>Prediction labels</span></div>
       <div class="checkrow"><input id="showSkeleton" type="checkbox" checked> <span>Skeleton/keypoints</span></div>
-      <div class="checkrow"><input id="showCenters" type="checkbox"> <span>Detection centers</span></div>
+      <div class="checkrow"><input id="showCenters" type="checkbox"> <span>Crop centers</span></div>
       <div class="checkrow"><input id="showDebug" type="checkbox" checked> <span>Status/debug text</span></div>
     </div>
 
@@ -115,12 +103,17 @@
   </aside>
   <button id="drawerTab" aria-label="Open options">‹</button>
 
-  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js"></script>
 
-  <script>
+  <script type="module">
+    import { loadLiteRt, loadAndCompile, Tensor } from 'https://cdn.jsdelivr.net/npm/@litertjs/core@2.5.3/+esm';
+
+    const LITERT_WASM_PATH = 'https://cdn.jsdelivr.net/npm/@litertjs/core@2.5.3/wasm/';
+    const HEADBAND_MODEL_URL = './model/headband_model.tflite';
+    const CLASSIFIER_SIZE = 224;
+
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
@@ -134,17 +127,13 @@
     const resolutionValue = document.getElementById('resolutionValue');
     const detectEvery = document.getElementById('detectEvery');
     const detectEveryValue = document.getElementById('detectEveryValue');
-    const enableHF = document.getElementById('enableHF');
+    const enableClassifier = document.getElementById('enableClassifier');
     const retryModelBtn = document.getElementById('retryModelBtn');
     const modelStatus = document.getElementById('modelStatus');
     const thresholdSlider = document.getElementById('thresholdSlider');
     const thresholdValue = document.getElementById('thresholdValue');
-    const nmsSlider = document.getElementById('nmsSlider');
-    const nmsValue = document.getElementById('nmsValue');
     const showPersonBoxes = document.getElementById('showPersonBoxes');
     const showHeadBoxes = document.getElementById('showHeadBoxes');
-    const showHFBoxes = document.getElementById('showHFBoxes');
-    const showOtherHeadwear = document.getElementById('showOtherHeadwear');
     const showLabels = document.getElementById('showLabels');
     const showSkeleton = document.getElementById('showSkeleton');
     const showCenters = document.getElementById('showCenters');
@@ -152,38 +141,20 @@
     const restartBtn = document.getElementById('restartBtn');
 
     let currentStream = null;
-    let currentLens = 'ultrawide';
-    let isRunning = false;
-    let frameIndex = 0;
-    let busy = false;
-    let lastDetections = [];
-    let fps = 0;
-    let fpsFrames = 0;
-    let lastFpsTime = performance.now();
-
-    let hfSession = null;
-    let hfInputName = null;
-    let hfOutputName = null;
-    let hfState = 'not-loaded';
-    let hfError = '';
-
     let personDetector = null;
     let poseDetector = null;
-
-    const HF_MODEL_URL = 'https://huggingface.co/louisJLN/yolo8-fashionpedia/resolve/2341a0b6fccba6c2349a429d243d15956b5973ee/results/yolov8n-fashionpedia-1.onnx';
-    const LOCAL_MODEL_URL = './model/yolov8n-fashionpedia-1.onnx';
-    const MODEL_SIZE = 640;
-
-    // Fashionpedia labels used by the HF-hosted YOLOv8n model.
-    const LABELS = [
-      'shirt, blouse','top, t-shirt, sweatshirt','sweater','cardigan','jacket','vest','pants','shorts','skirt','coat','dress','jumpsuit','cape',
-      'glasses','hat','headband, head covering, hair accessory','tie','glove','watch','belt','leg warmer','tights, stockings','sock','shoe','bag, wallet',
-      'scarf','umbrella','hood','collar','lapel','epaulette','sleeve','pocket','neckline','buckle','zipper','applique','bead','bow','flower','fringe','ribbon',
-      'rivet','ruffle','sequin','tassel'
-    ];
-    const HEADBAND_ID = 15;
-    const OTHER_HEADWEAR_IDS = new Set([14, 25, 27]); // hat, scarf, hood
-    const RELEVANT_IDS = new Set([HEADBAND_ID, 14, 25, 27]);
+    let headbandModel = null;
+    let isRunning = false;
+    let currentLens = 'ultrawide'; // default camera lens
+    let frameIndex = 0;
+    let lastDetections = [];
+    let busy = false;
+    let lastFpsTime = performance.now();
+    let fpsFrames = 0;
+    let fps = 0;
+    let modelClassNames = ['headband', 'no_headband'];
+    let modelLoadState = 'not-loaded';
+    let modelLoadError = '';
 
     const resolutionMap = [
       { label: '480p', width: 854, height: 480 },
@@ -191,20 +162,19 @@
       { label: '1080p', width: 1920, height: 1080 }
     ];
 
-    const inferenceCanvas = document.createElement('canvas');
-    inferenceCanvas.width = MODEL_SIZE;
-    inferenceCanvas.height = MODEL_SIZE;
-    const inferenceCtx = inferenceCanvas.getContext('2d', { willReadFrequently: true });
+    // LiteRT classifier preprocessing canvas. The trained Keras model already
+    // contains Rescaling(1/255), so pixels are passed as float32 values in
+    // their original 0..255 range.
+    const classifierCanvas = document.createElement('canvas');
+    classifierCanvas.width = CLASSIFIER_SIZE;
+    classifierCanvas.height = CLASSIFIER_SIZE;
+    const classifierCtx = classifierCanvas.getContext('2d', { willReadFrequently: true });
 
     function status(text, error = false) {
       if (!showDebug.checked && !error) { statusEl.style.display = 'none'; return; }
       statusEl.style.display = 'block';
       statusEl.textContent = text;
       statusEl.style.background = error ? 'rgba(120,0,0,0.85)' : 'rgba(0,0,0,0.65)';
-    }
-
-    function setModelStatus(text) {
-      modelStatus.textContent = 'Model status: ' + text;
     }
 
     function resizeCanvas() {
@@ -263,7 +233,7 @@
       const shoulders = [k.left_shoulder, k.right_shoulder].filter(p => goodKp(p));
       if (!head.length) return null;
       const xs = head.map(p => p.x), ys = head.map(p => p.y);
-      const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+      let minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
       const shoulderW = shoulders.length === 2 ? Math.abs(shoulders[0].x - shoulders[1].x) : 0;
       const faceW = Math.max(maxX - minX, shoulderW * 0.33, 32);
       const size = faceW * 1.9;
@@ -272,184 +242,80 @@
       return clampRect(cx - size / 2, cy - size / 2, size, size);
     }
 
-    function iou(a, b) {
-      const x1 = Math.max(a.x, b.x), y1 = Math.max(a.y, b.y);
-      const x2 = Math.min(a.x + a.w, b.x + b.w), y2 = Math.min(a.y + a.h, b.y + b.h);
-      const iw = Math.max(0, x2 - x1), ih = Math.max(0, y2 - y1);
-      const inter = iw * ih;
-      const union = a.w * a.h + b.w * b.h - inter;
-      return union > 0 ? inter / union : 0;
+    function setModelStatus(text) {
+      if (modelStatus) modelStatus.textContent = 'Model status: ' + text;
     }
 
-    function nms(detections, threshold) {
-      const sorted = [...detections].sort((a, b) => b.score - a.score);
-      const keep = [];
-      while (sorted.length) {
-        const best = sorted.shift();
-        keep.push(best);
-        for (let i = sorted.length - 1; i >= 0; i--) {
-          if (sorted[i].classId === best.classId && iou(sorted[i].rect, best.rect) > threshold) sorted.splice(i, 1);
-        }
-      }
-      return keep;
-    }
+    function makeClassifierInput(rect) {
+      const x = Math.max(0, Math.floor(rect.x));
+      const y = Math.max(0, Math.floor(rect.y));
+      const w = Math.max(1, Math.min(Math.floor(rect.w), video.videoWidth - x));
+      const h = Math.max(1, Math.min(Math.floor(rect.h), video.videoHeight - y));
 
-    function preprocessVideo() {
-      inferenceCtx.drawImage(video, 0, 0, MODEL_SIZE, MODEL_SIZE);
-      const rgba = inferenceCtx.getImageData(0, 0, MODEL_SIZE, MODEL_SIZE).data;
-      const plane = MODEL_SIZE * MODEL_SIZE;
-      const data = new Float32Array(plane * 3);
-      for (let i = 0, p = 0; i < rgba.length; i += 4, p++) {
-        data[p] = rgba[i] / 255;
-        data[plane + p] = rgba[i + 1] / 255;
-        data[plane * 2 + p] = rgba[i + 2] / 255;
-      }
-      return new ort.Tensor('float32', data, [1, 3, MODEL_SIZE, MODEL_SIZE]);
-    }
-
-    function decodeYolo(output) {
-      const dims = output.dims;
-      if (!dims || dims.length !== 3) throw new Error('Unexpected YOLO output shape: ' + JSON.stringify(dims));
-      const data = output.data;
-      let attrs, count, get;
-
-      // Ultralytics ONNX commonly exports [1, 4 + classes, boxes].
-      if (dims[1] < dims[2]) {
-        attrs = dims[1]; count = dims[2];
-        get = (box, attr) => data[attr * count + box];
-      } else {
-        count = dims[1]; attrs = dims[2];
-        get = (box, attr) => data[box * attrs + attr];
-      }
-
-      const classCount = attrs - 4;
-      if (classCount < 16) throw new Error(`Unexpected class count ${classCount} from output ${JSON.stringify(dims)}`);
-
-      const threshold = Number(thresholdSlider.value);
-      const videoW = video.videoWidth, videoH = video.videoHeight;
-      const candidates = [];
-
-      for (let i = 0; i < count; i++) {
-        let bestClass = -1, bestScore = 0;
-        for (const classId of RELEVANT_IDS) {
-          if (classId >= classCount) continue;
-          const score = get(i, 4 + classId);
-          if (score > bestScore) { bestScore = score; bestClass = classId; }
-        }
-        if (bestClass < 0 || bestScore < threshold) continue;
-
-        const cx = get(i, 0), cy = get(i, 1), w = get(i, 2), h = get(i, 3);
-        const rect = clampRect(
-          (cx - w / 2) * videoW / MODEL_SIZE,
-          (cy - h / 2) * videoH / MODEL_SIZE,
-          w * videoW / MODEL_SIZE,
-          h * videoH / MODEL_SIZE
-        );
-        candidates.push({ classId: bestClass, label: LABELS[bestClass] || `class ${bestClass}`, score: bestScore, rect, isHeadband: bestClass === HEADBAND_ID });
-      }
-
-      return nms(candidates, Number(nmsSlider.value)).slice(0, 50);
-    }
-
-    async function runHuggingFaceDetector() {
-      if (!enableHF.checked || !hfSession) return [];
-      const tensor = preprocessVideo();
-      const results = await hfSession.run({ [hfInputName]: tensor });
-      return decodeYolo(results[hfOutputName]);
-    }
-
-    async function loadHFModel() {
-      hfState = 'loading';
-      hfError = '';
-      hfSession = null;
-      setModelStatus('loading from Hugging Face...');
-      status('Loading Hugging Face headwear model...');
-
-      try {
-        // Single-thread WASM is the most broadly compatible path for iPhone Safari/GitHub Pages.
-        ort.env.wasm.numThreads = 1;
-        ort.env.wasm.simd = true;
-        ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/';
-
-        try {
-          hfSession = await ort.InferenceSession.create(HF_MODEL_URL, { executionProviders: ['wasm'] });
-        } catch (remoteErr) {
-          console.warn('Remote Hugging Face model failed, trying local model path.', remoteErr);
-          setModelStatus('remote failed; trying local ./model/...');
-          hfSession = await ort.InferenceSession.create(LOCAL_MODEL_URL, { executionProviders: ['wasm'] });
-        }
-
-        hfInputName = hfSession.inputNames[0];
-        hfOutputName = hfSession.outputNames[0];
-        hfState = 'loaded';
-        setModelStatus('loaded');
-        status('Hugging Face model loaded. Starting camera...');
-      } catch (err) {
-        hfState = 'failed';
-        hfError = err.message || String(err);
-        setModelStatus('failed - ' + hfError);
-        status('Hugging Face model failed to load: ' + hfError, true);
-      }
-    }
-
-    async function ensurePersonDetector() {
-      if (personDetector) return personDetector;
-      status('Loading COCO person detector...');
-      await tf.setBackend('webgl');
-      await tf.ready();
-      personDetector = await cocoSsd.load({ base: 'mobilenet_v2' });
-      return personDetector;
-    }
-
-    async function ensurePoseDetector() {
-      if (poseDetector) return poseDetector;
-      status('Loading MoveNet skeleton detector...');
-      await tf.setBackend('webgl');
-      await tf.ready();
-      poseDetector = await poseDetection.createDetector(
-        poseDetection.SupportedModels.MoveNet,
-        { modelType: poseDetection.movenet.modelType.MULTIPOSE_LIGHTNING }
+      classifierCtx.clearRect(0, 0, CLASSIFIER_SIZE, CLASSIFIER_SIZE);
+      classifierCtx.drawImage(
+        video, x, y, w, h,
+        0, 0, CLASSIFIER_SIZE, CLASSIFIER_SIZE
       );
-      return poseDetector;
+
+      const rgba = classifierCtx.getImageData(0, 0, CLASSIFIER_SIZE, CLASSIFIER_SIZE).data;
+      const rgb = new Float32Array(CLASSIFIER_SIZE * CLASSIFIER_SIZE * 3);
+      let j = 0;
+      for (let i = 0; i < rgba.length; i += 4) {
+        rgb[j++] = rgba[i];
+        rgb[j++] = rgba[i + 1];
+        rgb[j++] = rgba[i + 2];
+      }
+      return rgb;
     }
 
-    function centerInside(det, rect) {
-      const cx = det.rect.x + det.rect.w / 2;
-      const cy = det.rect.y + det.rect.h / 2;
-      return cx >= rect.x && cx <= rect.x + rect.w && cy >= rect.y && cy <= rect.y + rect.h;
+    async function runLiteRtClassifier(inputData) {
+      const inputTensor = new Tensor(inputData, [1, CLASSIFIER_SIZE, CLASSIFIER_SIZE, 3]);
+      let results = null;
+      try {
+        results = await headbandModel.run(inputTensor);
+        const output = results[0];
+        const values = await output.data();
+        return Array.from(values);
+      } finally {
+        inputTensor.delete();
+        if (results) {
+          if (typeof results.delete === 'function') results.delete();
+          else if (results[0] && typeof results[0].delete === 'function') results[0].delete();
+        }
+      }
     }
 
-    function bestDetectionForHead(hfDetections, headRect) {
-      return hfDetections
-        .filter(d => centerInside(d, headRect) || iou(d.rect, headRect) > 0.05)
-        .sort((a, b) => b.score - a.score)[0] || null;
+    async function classifyHead(rect) {
+      if (!enableClassifier.checked) return { state: 'disabled' };
+      if (modelLoadState === 'loading') return { state: 'loading' };
+      if (!headbandModel || modelLoadState !== 'loaded') return { state: 'not-loaded' };
+
+      const inputData = makeClassifierInput(rect);
+      const probs = await runLiteRtClassifier(inputData);
+      return { state: 'ok', probs };
     }
 
-    async function buildTargets(hfDetections) {
-      if (detectionMode.value === 'hf') return [];
-
-      if (detectionMode.value === 'person') {
-        await ensurePersonDetector();
-        const predictions = await personDetector.detect(video);
-        const people = predictions.filter(p => p.class === 'person' && p.score > 0.4);
-        return people.map(p => {
-          const [x, y, w, h] = p.bbox;
-          const headRect = personHeadRect(p.bbox);
-          return { type: 'person', personRect: { x, y, w, h }, headRect, match: bestDetectionForHead(hfDetections, headRect), score: p.score };
-        });
+    function classifyLabel(classification) {
+      if (!classification || classification.state !== 'ok') {
+        const state = classification ? classification.state : 'not-loaded';
+        const labelMap = {
+          'disabled': 'model off',
+          'loading': 'model loading',
+          'not-loaded': 'model not loaded'
+        };
+        return { label: labelMap[state] || 'model error', score: 0, headbandScore: 0, systemLabel: true };
       }
 
-      await ensurePoseDetector();
-      const posesRaw = await poseDetector.estimatePoses(video, { maxPoses: 20, flipHorizontal: false });
-      const poses = posesRaw.filter(p => p.score == null || p.score >= 0.18);
-      return poses.map(pose => {
-        const headRect = skeletonHeadRect(pose);
-        if (!headRect) return null;
-        return { type: 'pose', pose, headRect, match: bestDetectionForHead(hfDetections, headRect), score: pose.score || 0 };
-      }).filter(Boolean);
+      const probs = classification.probs;
+      let headbandIdx = modelClassNames.indexOf('headband');
+      if (headbandIdx < 0) headbandIdx = 0;
+      const hb = Number(probs[headbandIdx] || 0);
+      const threshold = Number(thresholdSlider.value);
+      return { label: hb >= threshold ? 'headband' : 'no_headband', score: hb, headbandScore: hb, systemLabel: false };
     }
 
-    function drawText(text, x, y, bg = 'rgba(0,0,0,0.70)', color = '#fff') {
+    function drawText(text, x, y, bg = 'rgba(0,0,0,0.65)', color = '#fff') {
       ctx.font = '14px Arial';
       const pad = 4;
       const m = ctx.measureText(text);
@@ -481,89 +347,79 @@
       }
     }
 
-    function drawHFDetection(det) {
-      if (!det.isHeadband && !showOtherHeadwear.checked) return;
-      if (!showHFBoxes.checked) return;
-      const r = toScreenRect(det.rect);
-      const color = det.isHeadband ? '#00ff66' : '#ff9f1a';
-      ctx.strokeStyle = color;
-      ctx.lineWidth = det.isHeadband ? 4 : 2;
-      ctx.strokeRect(r.x, r.y, r.w, r.h);
-      if (showCenters.checked) {
-        ctx.fillStyle = color;
-        ctx.beginPath(); ctx.arc(r.x + r.w / 2, r.y + r.h / 2, 4, 0, Math.PI * 2); ctx.fill();
-      }
-      if (showLabels.checked) {
-        const name = det.isHeadband ? 'headband*' : LABELS[det.classId];
-        drawText(`${name} ${(det.score * 100).toFixed(0)}%`, r.x, Math.max(18, r.y - 4), det.isHeadband ? 'rgba(0,120,40,0.88)' : 'rgba(120,70,0,0.88)');
-      }
-    }
-
-    function drawTarget(target) {
-      if (target.type === 'person' && showPersonBoxes.checked && target.personRect) {
-        const r = toScreenRect(target.personRect);
-        ctx.strokeStyle = 'rgba(0,255,0,0.75)'; ctx.lineWidth = 2; ctx.strokeRect(r.x, r.y, r.w, r.h);
-      }
-      if (target.type === 'pose' && showSkeleton.checked && target.pose) drawSkeleton(target.pose);
-
-      if (showHeadBoxes.checked && target.headRect) {
-        const r = toScreenRect(target.headRect);
-        const isHB = target.match && target.match.isHeadband;
-        const color = isHB ? '#00ff66' : '#ffd400';
-        ctx.strokeStyle = color; ctx.lineWidth = isHB ? 4 : 2; ctx.strokeRect(r.x, r.y, r.w, r.h);
-        if (showCenters.checked) {
-          ctx.fillStyle = color; ctx.beginPath(); ctx.arc(r.x + r.w / 2, r.y + r.h / 2, 4, 0, Math.PI * 2); ctx.fill();
-        }
-        if (showLabels.checked) {
-          let text = 'no headband detected';
-          if (!enableHF.checked) text = 'HF model off';
-          else if (!hfSession) text = 'HF model not loaded';
-          else if (target.match) {
-            text = target.match.isHeadband
-              ? `headband* ${(target.match.score * 100).toFixed(0)}%`
-              : `${LABELS[target.match.classId]} ${(target.match.score * 100).toFixed(0)}%`;
-          }
-          drawText(text, r.x, Math.max(18, r.y - 4), isHB ? 'rgba(0,120,40,0.88)' : 'rgba(0,0,0,0.70)');
-        }
-      }
-    }
-
-    function drawDetections(state) {
+    function drawDetections(items) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      for (const det of state.hfDetections || []) drawHFDetection(det);
-      for (const target of state.targets || []) drawTarget(target);
+      const d = getCoverDimensions();
+      for (const item of items) {
+        const isHeadband = item.result && item.result.label === 'headband';
+        const color = isHeadband ? '#00ff66' : '#ffd400';
+        if (item.type === 'person' && showPersonBoxes.checked && item.personRect) {
+          const r = toScreenRect(item.personRect);
+          ctx.strokeStyle = 'rgba(0,255,0,0.85)'; ctx.lineWidth = 2; ctx.strokeRect(r.x, r.y, r.w, r.h);
+        }
+        if (item.type === 'pose' && showSkeleton.checked && item.pose) drawSkeleton(item.pose);
+        if (showHeadBoxes.checked && item.headRect) {
+          const r = toScreenRect(item.headRect);
+          ctx.strokeStyle = color; ctx.lineWidth = isHeadband ? 4 : 2; ctx.strokeRect(r.x, r.y, r.w, r.h);
+          if (showCenters.checked) {
+            ctx.fillStyle = color; ctx.beginPath(); ctx.arc(r.x + r.w / 2, r.y + r.h / 2, 4, 0, Math.PI * 2); ctx.fill();
+          }
+          if (showLabels.checked) {
+            const text = item.result ? (item.result.systemLabel ? item.result.label : `${item.result.label} ${(item.result.headbandScore * 100).toFixed(0)}%`) : 'no model';
+            drawText(text, r.x, Math.max(18, r.y - 4), isHeadband ? 'rgba(0,120,40,0.85)' : 'rgba(0,0,0,0.65)');
+          }
+        }
+      }
     }
 
-    async function processFrame() {
-      let hfDetections = [];
-      if (enableHF.checked && hfSession) hfDetections = await runHuggingFaceDetector();
-      const targets = await buildTargets(hfDetections);
-      return { hfDetections, targets };
+    async function detectPersonMode() {
+      const predictions = await personDetector.detect(video);
+      const people = predictions.filter(p => p.class === 'person' && p.score > 0.4);
+      const items = [];
+      for (const p of people) {
+        const [x, y, w, h] = p.bbox;
+        const headRect = personHeadRect(p.bbox);
+        let result = null;
+        try { result = classifyLabel(await classifyHead(headRect)); } catch (e) { result = { label: 'model error', score: 0, headbandScore: 0 }; }
+        items.push({ type: 'person', personRect: { x, y, w, h }, headRect, result, score: p.score });
+      }
+      return items;
+    }
+
+    async function detectSkeletonMode() {
+      await ensurePoseDetector();
+      const posesRaw = await poseDetector.estimatePoses(video, { maxPoses: 20, flipHorizontal: false });
+      const poses = posesRaw.filter(p => p.score == null || p.score >= 0.18);
+      const items = [];
+      for (const pose of poses) {
+        const headRect = skeletonHeadRect(pose);
+        if (!headRect) continue;
+        let result = null;
+        try { result = classifyLabel(await classifyHead(headRect)); } catch (e) { result = { label: 'model error', score: 0, headbandScore: 0 }; }
+        items.push({ type: 'pose', pose, headRect, result, score: pose.score || 0 });
+      }
+      return items;
     }
 
     async function loop() {
       if (!isRunning) return;
       requestAnimationFrame(loop);
       if (busy || video.readyState < 2) return;
-
       frameIndex++;
       fpsFrames++;
       const now = performance.now();
       if (now - lastFpsTime > 1000) { fps = fpsFrames; fpsFrames = 0; lastFpsTime = now; }
-
       const every = Math.max(1, Number(detectEvery.value));
       if (frameIndex % every !== 0) { drawDetections(lastDetections); return; }
-
       busy = true;
       try {
-        lastDetections = await processFrame();
+        if (detectionMode.value === 'person') lastDetections = await detectPersonMode();
+        else lastDetections = await detectSkeletonMode();
         drawDetections(lastDetections);
-        const hb = lastDetections.hfDetections.filter(d => d.isHeadband).length;
-        const other = lastDetections.hfDetections.filter(d => !d.isHeadband).length;
-        status(`${detectionMode.value} | ${hb} headband* | ${other} other headwear | ${fps} fps | HF ${hfState}`);
+        const hb = lastDetections.filter(d => d.result && d.result.label === 'headband').length;
+        status(`${detectionMode.value} | ${lastDetections.length} targets | ${hb} headband | ${fps} fps | model ${headbandModel ? 'on' : 'off'}`);
       } catch (err) {
         status('Detection error: ' + err.message, true);
-        console.error(err);
       } finally {
         busy = false;
       }
@@ -576,7 +432,6 @@
       resolutionValue.textContent = res.label;
       lensToggle.textContent = 'Lens: ' + (currentLens === 'ultrawide' ? 'Ultrawide' : 'Normal');
       status('Starting camera...');
-
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
         video: { facingMode: 'environment', width: { ideal: res.width }, height: { ideal: res.height } }
@@ -586,7 +441,6 @@
       await new Promise(resolve => video.onloadedmetadata = resolve);
       await video.play();
       resizeCanvas();
-
       if (currentLens === 'ultrawide') {
         const track = stream.getVideoTracks()[0];
         const caps = track.getCapabilities ? track.getCapabilities() : {};
@@ -594,37 +448,96 @@
           try { await track.applyConstraints({ advanced: [{ zoom: caps.zoom.min }] }); } catch (e) {}
         }
       }
-
       isRunning = true;
       loop();
+    }
+
+    async function loadHeadbandModel() {
+      modelLoadState = 'loading';
+      modelLoadError = '';
+      headbandModel = null;
+      setModelStatus('loading ./model/headband_model.tflite with LiteRT.js');
+      status('Loading LiteRT headband classifier...');
+      try {
+        await loadLiteRt(LITERT_WASM_PATH);
+        headbandModel = await loadAndCompile(
+          HEADBAND_MODEL_URL,
+          { accelerator: 'wasm' }
+        );
+
+        const inputDetails = headbandModel.getInputDetails ? headbandModel.getInputDetails() : null;
+        const outputDetails = headbandModel.getOutputDetails ? headbandModel.getOutputDetails() : null;
+        console.log('LiteRT input details:', inputDetails);
+        console.log('LiteRT output details:', outputDetails);
+
+        // Smoke-test the exact NHWC float32 shape used by the trained model.
+        const test = await runLiteRtClassifier(
+          new Float32Array(CLASSIFIER_SIZE * CLASSIFIER_SIZE * 3)
+        );
+
+        modelLoadState = 'loaded';
+        enableClassifier.checked = true;
+        setModelStatus('loaded (LiteRT/WASM); test [' + test.map(v => Number(v).toFixed(3)).join(', ') + ']');
+        console.log('Headband TFLite model loaded', test);
+      } catch (err) {
+        headbandModel = null;
+        modelLoadState = 'failed';
+        modelLoadError = err.message || String(err);
+        enableClassifier.checked = false;
+        setModelStatus('failed - ' + modelLoadError);
+        status('TFLite model failed to load. Person/pose detection still works: ' + modelLoadError, true);
+        console.error('LiteRT model load failed', err);
+        await new Promise(r => setTimeout(r, 1500));
+      }
+    }
+
+    async function ensurePoseDetector() {
+      if (poseDetector) return poseDetector;
+      status('Loading MoveNet skeleton detector...');
+      poseDetector = await poseDetection.createDetector(
+        poseDetection.SupportedModels.MoveNet,
+        { modelType: poseDetection.movenet.modelType.MULTIPOSE_LIGHTNING }
+      );
+      return poseDetector;
+    }
+
+    async function loadAllModels() {
+      status('Loading person-detection backend...');
+      await tf.setBackend('webgl');
+      await tf.ready();
+
+      status('Loading COCO person detector...');
+      personDetector = await cocoSsd.load({ base: 'mobilenet_v2' });
+
+      // Skeleton model is loaded only if/when skeleton mode is selected.
+      // The headband classifier itself runs through LiteRT.js from the .tflite file.
+      await loadHeadbandModel();
     }
 
     drawerTab.addEventListener('click', () => {
       drawer.classList.toggle('open');
       drawerTab.textContent = drawer.classList.contains('open') ? '›' : '‹';
     });
-
+    detectionMode.addEventListener('change', async () => {
+      if (detectionMode.value === 'skeleton') {
+        try {
+          await ensurePoseDetector();
+          status('Skeleton mode ready.');
+        } catch (err) {
+          status('Skeleton model load error: ' + err.message, true);
+          detectionMode.value = 'person';
+        }
+      }
+    });
     lensToggle.addEventListener('click', async () => {
       currentLens = currentLens === 'ultrawide' ? 'normal' : 'ultrawide';
       await startCamera();
     });
-
-    detectionMode.addEventListener('change', async () => {
-      try {
-        if (detectionMode.value === 'person') await ensurePersonDetector();
-        if (detectionMode.value === 'skeleton') await ensurePoseDetector();
-      } catch (err) {
-        status('Auxiliary detector load failed: ' + err.message, true);
-        detectionMode.value = 'hf';
-      }
-    });
-
     resolutionSlider.addEventListener('input', () => { resolutionValue.textContent = resolutionMap[Number(resolutionSlider.value)].label; });
     resolutionSlider.addEventListener('change', startCamera);
     detectEvery.addEventListener('input', () => { detectEveryValue.textContent = detectEvery.value; });
     thresholdSlider.addEventListener('input', () => { thresholdValue.textContent = Number(thresholdSlider.value).toFixed(2); });
-    nmsSlider.addEventListener('input', () => { nmsValue.textContent = Number(nmsSlider.value).toFixed(2); });
-    retryModelBtn.addEventListener('click', loadHFModel);
+    retryModelBtn.addEventListener('click', loadHeadbandModel);
     restartBtn.addEventListener('click', startCamera);
     showDebug.addEventListener('change', () => status('Debug display changed.'));
     window.addEventListener('resize', resizeCanvas);
@@ -634,15 +547,11 @@
         resizeCanvas();
         detectEveryValue.textContent = detectEvery.value;
         thresholdValue.textContent = Number(thresholdSlider.value).toFixed(2);
-        nmsValue.textContent = Number(nmsSlider.value).toFixed(2);
         resolutionValue.textContent = resolutionMap[Number(resolutionSlider.value)].label;
-
-        // Start camera first so the UI is immediately usable while the model downloads.
+        await loadAllModels();
         await startCamera();
-        await loadHFModel();
       } catch (err) {
         status('Setup error: ' + err.message, true);
-        console.error(err);
       }
     }
 
