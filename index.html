@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>Headband Tracker - TFLite</title>
+  <title>Headband Tracker - TFLite v3</title>
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <style>
@@ -54,7 +54,7 @@
   <div id="status">Starting...</div>
 
   <aside id="drawer">
-    <h2>Headband Tracker - TFLite</h2>
+    <h2>Headband Tracker - TFLite v3</h2>
 
     <div>
       <label for="detectionMode">Detection mode</label>
@@ -487,11 +487,21 @@
           throw new Error('TFLite browser runtime did not load from the CDN.');
         }
 
-        // Fetch explicitly first so a bad GitHub path produces a clear HTTP
-        // error instead of a vague model-parser failure.
-        const response = await fetch(HEADBAND_MODEL_URL + '?v=' + Date.now(), {
-          cache: 'no-store'
-        });
+        // tfjs-tflite uses separate WebAssembly files. On Safari/iOS the
+        // package cannot reliably infer their CDN location, which causes the
+        // characteristic "undefined ... _malloc" failure. Pin the exact
+        // directory before loading the model.
+        const TFLITE_WASM_PATH =
+          'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@0.0.1-alpha.10/dist/';
+        if (typeof window.tflite.setWasmPath === 'function') {
+          window.tflite.setWasmPath(TFLITE_WASM_PATH);
+        }
+
+        // Check the GitHub Pages model path ourselves so missing/HTML files
+        // produce a useful error. loadTFLiteModel itself must receive the URL,
+        // not the downloaded ArrayBuffer.
+        const modelUrl = HEADBAND_MODEL_URL + '?v=' + Date.now();
+        const response = await fetch(modelUrl, { cache: 'no-store' });
         if (!response.ok) {
           throw new Error(`Model HTTP ${response.status}: ${response.statusText}`);
         }
@@ -500,8 +510,16 @@
           throw new Error(`Model file is unexpectedly small (${modelBytes.byteLength} bytes).`);
         }
 
-        setModelStatus(`downloaded ${(modelBytes.byteLength / 1048576).toFixed(1)} MB; initializing...`);
-        headbandModel = await window.tflite.loadTFLiteModel(modelBytes);
+        setModelStatus(
+          `downloaded ${(modelBytes.byteLength / 1048576).toFixed(1)} MB; loading WASM interpreter...`
+        );
+
+        // One thread is the safest setting on GitHub Pages/iOS because
+        // multi-threaded WASM requires cross-origin isolation headers that
+        // GitHub Pages does not provide.
+        headbandModel = await window.tflite.loadTFLiteModel(modelUrl, {
+          numThreads: 1
+        });
 
         const inputInfo = (headbandModel.inputs || []).map(x => ({
           name: x.name,
