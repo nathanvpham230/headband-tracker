@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>Headband Tracker - LiteRT</title>
+  <title>Headband Tracker - TFLite</title>
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <style>
@@ -54,7 +54,7 @@
   <div id="status">Starting...</div>
 
   <aside id="drawer">
-    <h2>Headband Tracker - LiteRT</h2>
+    <h2>Headband Tracker - TFLite</h2>
 
     <div>
       <label for="detectionMode">Detection mode</label>
@@ -78,7 +78,7 @@
     </div>
 
     <div class="group">
-      <label>Headband classifier (LiteRT)</label>
+      <label>Headband classifier (TFLite/WASM)</label>
       <div class="checkrow"><input id="enableClassifier" type="checkbox" checked> <span>Run TFLite headband model</span></div>
       <label for="thresholdSlider">Headband threshold</label>
       <div class="row"><input id="thresholdSlider" type="range" min="0.05" max="0.95" value="0.65" step="0.05"><div id="thresholdValue" class="value">0.65</div></div>
@@ -106,11 +106,9 @@
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@0.0.1-alpha.10/dist/tf-tflite.min.js"></script>
 
-  <script type="module">
-    import { loadLiteRt, loadAndCompile, Tensor } from 'https://cdn.jsdelivr.net/npm/@litertjs/core@2.5.3/+esm';
-
-    const LITERT_WASM_PATH = 'https://cdn.jsdelivr.net/npm/@litertjs/core@2.5.3/wasm/';
+  <script>
     const HEADBAND_MODEL_URL = './model/headband_model.tflite';
     const CLASSIFIER_SIZE = 224;
 
@@ -269,20 +267,38 @@
       return rgb;
     }
 
-    async function runLiteRtClassifier(inputData) {
-      const inputTensor = new Tensor(inputData, [1, CLASSIFIER_SIZE, CLASSIFIER_SIZE, 3]);
-      let results = null;
+    async function runTFLiteClassifier(inputData) {
+      // tfjs-tflite uses the regular TFLite Interpreter internally. That is
+      // important for this model because its FlatBuffer has a dynamic batch
+      // signature (-1,224,224,3) but a concrete runtime shape of
+      // (1,224,224,3). LiteRT.js CompiledModel currently checks the dynamic
+      // signature literally, while the Interpreter accepts the concrete batch.
+      const inputTensor = tf.tensor4d(
+        inputData,
+        [1, CLASSIFIER_SIZE, CLASSIFIER_SIZE, 3],
+        'float32'
+      );
+      let output = null;
       try {
-        results = await headbandModel.run(inputTensor);
-        const output = results[0];
-        const values = await output.data();
+        output = headbandModel.predict(inputTensor);
+
+        // This model has one output tensor, but tolerate the array/map forms
+        // so the status message remains useful if the exported model changes.
+        let outputTensor = output;
+        if (Array.isArray(output)) outputTensor = output[0];
+        else if (!(output instanceof tf.Tensor) && output && typeof output === 'object') {
+          const keys = Object.keys(output);
+          outputTensor = keys.length ? output[keys[0]] : null;
+        }
+        if (!outputTensor || typeof outputTensor.data !== 'function') {
+          throw new Error('TFLite model returned no readable output tensor.');
+        }
+
+        const values = await outputTensor.data();
         return Array.from(values);
       } finally {
-        inputTensor.delete();
-        if (results) {
-          if (typeof results.delete === 'function') results.delete();
-          else if (results[0] && typeof results[0].delete === 'function') results[0].delete();
-        }
+        inputTensor.dispose();
+        if (output) tf.dispose(output);
       }
     }
 
@@ -292,7 +308,7 @@
       if (!headbandModel || modelLoadState !== 'loaded') return { state: 'not-loaded' };
 
       const inputData = makeClassifierInput(rect);
-      const probs = await runLiteRtClassifier(inputData);
+      const probs = await runTFLiteClassifier(inputData);
       return { state: 'ok', probs };
     }
 
@@ -453,41 +469,91 @@
     }
 
     async function loadHeadbandModel() {
+      if (modelLoadState === 'loading') return;
+      if (headbandModel && modelLoadState === 'loaded') {
+        setModelStatus('already loaded (TFLite/WASM)');
+        return;
+      }
+
       modelLoadState = 'loading';
       modelLoadError = '';
       headbandModel = null;
-      setModelStatus('loading ./model/headband_model.tflite with LiteRT.js');
-      status('Loading LiteRT headband classifier...');
+      enableClassifier.checked = false;
+      setModelStatus('checking ./model/headband_model.tflite');
+      status('Loading TFLite headband classifier...');
+
       try {
-        await loadLiteRt(LITERT_WASM_PATH);
-        headbandModel = await loadAndCompile(
-          HEADBAND_MODEL_URL,
-          { accelerator: 'wasm' }
-        );
+        if (!window.tflite || typeof window.tflite.loadTFLiteModel !== 'function') {
+          throw new Error('TFLite browser runtime did not load from the CDN.');
+        }
 
-        const inputDetails = headbandModel.getInputDetails ? headbandModel.getInputDetails() : null;
-        const outputDetails = headbandModel.getOutputDetails ? headbandModel.getOutputDetails() : null;
-        console.log('LiteRT input details:', inputDetails);
-        console.log('LiteRT output details:', outputDetails);
+        // Fetch explicitly first so a bad GitHub path produces a clear HTTP
+        // error instead of a vague model-parser failure.
+        const response = await fetch(HEADBAND_MODEL_URL + '?v=' + Date.now(), {
+          cache: 'no-store'
+        });
+        if (!response.ok) {
+          throw new Error(`Model HTTP ${response.status}: ${response.statusText}`);
+        }
+        const modelBytes = await response.arrayBuffer();
+        if (modelBytes.byteLength < 1024) {
+          throw new Error(`Model file is unexpectedly small (${modelBytes.byteLength} bytes).`);
+        }
 
-        // Smoke-test the exact NHWC float32 shape used by the trained model.
-        const test = await runLiteRtClassifier(
+        setModelStatus(`downloaded ${(modelBytes.byteLength / 1048576).toFixed(1)} MB; initializing...`);
+        headbandModel = await window.tflite.loadTFLiteModel(modelBytes);
+
+        const inputInfo = (headbandModel.inputs || []).map(x => ({
+          name: x.name,
+          shape: Array.from(x.shape || []),
+          dtype: x.dtype
+        }));
+        const outputInfo = (headbandModel.outputs || []).map(x => ({
+          name: x.name,
+          shape: Array.from(x.shape || []),
+          dtype: x.dtype
+        }));
+        console.log('TFLite inputs:', inputInfo);
+        console.log('TFLite outputs:', outputInfo);
+
+        // Validate the concrete input shape when the runtime exposes it.
+        if (inputInfo.length) {
+          const shape = inputInfo[0].shape;
+          const expected = [1, CLASSIFIER_SIZE, CLASSIFIER_SIZE, 3];
+          if (shape.length === 4 && shape.every(n => Number.isFinite(Number(n)))) {
+            const normalized = shape.map(Number);
+            const compatible = normalized.every((n, i) => n === expected[i] || (i === 0 && n === -1));
+            if (!compatible) {
+              throw new Error(`Unexpected model input shape [${normalized.join(', ')}]; expected [1, 224, 224, 3].`);
+            }
+          }
+        }
+
+        // Smoke-test with a real batch of one before enabling live inference.
+        const test = await runTFLiteClassifier(
           new Float32Array(CLASSIFIER_SIZE * CLASSIFIER_SIZE * 3)
         );
+        if (test.length < 2 || test.some(v => !Number.isFinite(Number(v)))) {
+          throw new Error('Model smoke test returned an invalid output: [' + test.join(', ') + ']');
+        }
 
         modelLoadState = 'loaded';
         enableClassifier.checked = true;
-        setModelStatus('loaded (LiteRT/WASM); test [' + test.map(v => Number(v).toFixed(3)).join(', ') + ']');
-        console.log('Headband TFLite model loaded', test);
+        const inShape = inputInfo.length ? `[${inputInfo[0].shape.join(',')}]` : '[1,224,224,3]';
+        setModelStatus(
+          'loaded (TFLite/WASM) input ' + inShape +
+          '; test [' + test.slice(0, 4).map(v => Number(v).toFixed(3)).join(', ') + ']'
+        );
+        status('TFLite headband classifier loaded.');
+        console.log('Headband TFLite model ready', test);
       } catch (err) {
         headbandModel = null;
         modelLoadState = 'failed';
-        modelLoadError = err.message || String(err);
+        modelLoadError = err && err.message ? err.message : String(err);
         enableClassifier.checked = false;
         setModelStatus('failed - ' + modelLoadError);
-        status('TFLite model failed to load. Person/pose detection still works: ' + modelLoadError, true);
-        console.error('LiteRT model load failed', err);
-        await new Promise(r => setTimeout(r, 1500));
+        status('TFLite model failed. Person/pose detection still works: ' + modelLoadError, true);
+        console.error('TFLite model load failed', err);
       }
     }
 
@@ -510,7 +576,7 @@
       personDetector = await cocoSsd.load({ base: 'mobilenet_v2' });
 
       // Skeleton model is loaded only if/when skeleton mode is selected.
-      // The headband classifier itself runs through LiteRT.js from the .tflite file.
+      // The headband classifier runs directly from the .tflite file through the browser TFLite WASM runtime.
       await loadHeadbandModel();
     }
 
@@ -537,7 +603,7 @@
     resolutionSlider.addEventListener('change', startCamera);
     detectEvery.addEventListener('input', () => { detectEveryValue.textContent = detectEvery.value; });
     thresholdSlider.addEventListener('input', () => { thresholdValue.textContent = Number(thresholdSlider.value).toFixed(2); });
-    retryModelBtn.addEventListener('click', loadHeadbandModel);
+    retryModelBtn.addEventListener('click', () => { if (modelLoadState === 'loaded') { setModelStatus('already loaded (TFLite/WASM)'); } else { loadHeadbandModel(); } });
     restartBtn.addEventListener('click', startCamera);
     showDebug.addEventListener('change', () => status('Debug display changed.'));
     window.addEventListener('resize', resizeCanvas);
