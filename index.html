@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>Headband Tracker - TFLite v3</title>
+  <title>Headband Tracker - Roboflow Cloud</title>
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <style>
@@ -33,11 +33,13 @@
     h2 { font-size: 17px; margin: 0 0 12px; }
     .group { border-top: 1px solid rgba(255,255,255,0.15); padding-top: 12px; margin-top: 12px; }
     label { display: block; font-size: 12px; color: #ccc; margin: 0 0 5px; }
-    select, button, input[type="range"] { width: 100%; }
-    select, button {
+    select, button, input[type="range"], input[type="password"], input[type="text"], input[type="number"] { width: 100%; }
+    select, button, input[type="password"], input[type="text"], input[type="number"] {
       padding: 10px; border: 1px solid #444; border-radius: 9px; background: #272727; color: white; font-size: 14px;
     }
     button { background: #2d6cdf; font-weight: 700; border: 0; }
+    button.secondary { background: #444; }
+    .button-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
     .row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; margin: 10px 0; }
     .checkrow { display: flex; gap: 8px; align-items: center; margin: 8px 0; font-size: 13px; color: #ddd; }
     .checkrow input { width: auto; }
@@ -54,7 +56,7 @@
   <div id="status">Starting...</div>
 
   <aside id="drawer">
-    <h2>Headband Tracker - TFLite v3</h2>
+    <h2>Headband Tracker - Roboflow Cloud</h2>
 
     <div>
       <label for="detectionMode">Detection mode</label>
@@ -78,13 +80,29 @@
     </div>
 
     <div class="group">
-      <label>Headband classifier (TFLite/WASM)</label>
-      <div class="checkrow"><input id="enableClassifier" type="checkbox" checked> <span>Run TFLite headband model</span></div>
-      <label for="thresholdSlider">Headband threshold</label>
+      <label>Headband classifier (Roboflow Cloud)</label>
+      <div class="checkrow"><input id="enableClassifier" type="checkbox" checked> <span>Run cloud headband classifier</span></div>
+
+      <label for="apiKeyInput">Roboflow API key</label>
+      <input id="apiKeyInput" type="password" inputmode="text" autocomplete="off" placeholder="Paste a NEW Roboflow API key" />
+      <div class="button-row">
+        <button id="saveApiKeyBtn">Use key</button>
+        <button id="clearApiKeyBtn" class="secondary">Clear key</button>
+      </div>
+      <div class="hint">The key is kept only in this browser tab via sessionStorage and is never written into this HTML file.</div>
+
+      <label for="thresholdSlider" style="margin-top:10px;">Headband threshold</label>
       <div class="row"><input id="thresholdSlider" type="range" min="0.05" max="0.95" value="0.65" step="0.05"><div id="thresholdValue" class="value">0.65</div></div>
-      <div class="hint">Model path: <span class="pill">./model/headband_model.tflite</span></div>
-      <button id="retryModelBtn" class="secondary" style="margin-top:8px;">Retry model load</button>
-      <div id="modelStatus" class="hint">Model status: not loaded</div>
+
+      <label for="cloudRefresh">Refresh same target every</label>
+      <div class="row"><input id="cloudRefresh" type="range" min="500" max="5000" value="1500" step="250"><div id="cloudRefreshValue" class="value">1.5s</div></div>
+
+      <label for="maxRequests">Max cloud requests / second</label>
+      <div class="row"><input id="maxRequests" type="range" min="1" max="10" value="4" step="1"><div id="maxRequestsValue" class="value">4</div></div>
+
+      <div class="hint">Workflow: <span class="pill">SkullyHeadbands3 ViT</span></div>
+      <button id="testApiBtn" class="secondary" style="margin-top:8px;">Test API on largest visible head</button>
+      <div id="modelStatus" class="hint">Cloud status: API key required</div>
     </div>
 
     <div class="group">
@@ -106,11 +124,11 @@
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@0.0.1-alpha.10/dist/tf-tflite.min.js"></script>
 
   <script>
-    const HEADBAND_MODEL_URL = './model/headband_model.tflite';
+    const ROBOFLOW_WORKFLOW_URL = 'https://serverless.roboflow.com/nathan-pham-s-workspace/workflows/skullyheadbands3-vskullyheadbands3-3-vit-base-patch16-224-in21k-t1-logic';
     const CLASSIFIER_SIZE = 224;
+    const CLOUD_TIMEOUT_MS = 15000;
 
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
@@ -126,10 +144,17 @@
     const detectEvery = document.getElementById('detectEvery');
     const detectEveryValue = document.getElementById('detectEveryValue');
     const enableClassifier = document.getElementById('enableClassifier');
-    const retryModelBtn = document.getElementById('retryModelBtn');
+    const apiKeyInput = document.getElementById('apiKeyInput');
+    const saveApiKeyBtn = document.getElementById('saveApiKeyBtn');
+    const clearApiKeyBtn = document.getElementById('clearApiKeyBtn');
+    const testApiBtn = document.getElementById('testApiBtn');
     const modelStatus = document.getElementById('modelStatus');
     const thresholdSlider = document.getElementById('thresholdSlider');
     const thresholdValue = document.getElementById('thresholdValue');
+    const cloudRefresh = document.getElementById('cloudRefresh');
+    const cloudRefreshValue = document.getElementById('cloudRefreshValue');
+    const maxRequests = document.getElementById('maxRequests');
+    const maxRequestsValue = document.getElementById('maxRequestsValue');
     const showPersonBoxes = document.getElementById('showPersonBoxes');
     const showHeadBoxes = document.getElementById('showHeadBoxes');
     const showLabels = document.getElementById('showLabels');
@@ -141,7 +166,6 @@
     let currentStream = null;
     let personDetector = null;
     let poseDetector = null;
-    let headbandModel = null;
     let isRunning = false;
     let currentLens = 'ultrawide'; // default camera lens
     let frameIndex = 0;
@@ -150,9 +174,15 @@
     let lastFpsTime = performance.now();
     let fpsFrames = 0;
     let fps = 0;
-    let modelClassNames = ['headband', 'no_headband'];
-    let modelLoadState = 'not-loaded';
-    let modelLoadError = '';
+    let roboflowApiKey = '';
+    let cloudTracks = [];
+    let cloudTrackCounter = 1;
+    let activeCloudRequests = 0;
+    let recentRequestStarts = [];
+    let cloudRequestCount = 0;
+    let cloudErrorCount = 0;
+    let lastCloudError = '';
+    const MAX_CONCURRENT_CLOUD = 3;
 
     const resolutionMap = [
       { label: '480p', width: 854, height: 480 },
@@ -160,9 +190,8 @@
       { label: '1080p', width: 1920, height: 1080 }
     ];
 
-    // LiteRT classifier preprocessing canvas. The trained Keras model already
-    // contains Rescaling(1/255), so pixels are passed as float32 values in
-    // their original 0..255 range.
+    // Cloud-classifier crop canvas. Each detected head region is resized to
+    // 224x224 JPEG and sent as base64 to the Roboflow Workflow.
     const classifierCanvas = document.createElement('canvas');
     classifierCanvas.width = CLASSIFIER_SIZE;
     classifierCanvas.height = CLASSIFIER_SIZE;
@@ -241,94 +270,245 @@
     }
 
     function setModelStatus(text) {
-      if (modelStatus) modelStatus.textContent = 'Model status: ' + text;
+      if (modelStatus) modelStatus.textContent = 'Cloud status: ' + text;
     }
 
-    function makeClassifierInput(rect) {
+    function updateCloudControlReadouts() {
+      cloudRefreshValue.textContent = (Number(cloudRefresh.value) / 1000).toFixed(Number(cloudRefresh.value) % 1000 ? 2 : 1).replace(/0$/, '') + 's';
+      maxRequestsValue.textContent = maxRequests.value;
+    }
+
+    function cropToBase64(rect) {
       const x = Math.max(0, Math.floor(rect.x));
       const y = Math.max(0, Math.floor(rect.y));
       const w = Math.max(1, Math.min(Math.floor(rect.w), video.videoWidth - x));
       const h = Math.max(1, Math.min(Math.floor(rect.h), video.videoHeight - y));
 
       classifierCtx.clearRect(0, 0, CLASSIFIER_SIZE, CLASSIFIER_SIZE);
-      classifierCtx.drawImage(
-        video, x, y, w, h,
-        0, 0, CLASSIFIER_SIZE, CLASSIFIER_SIZE
-      );
-
-      const rgba = classifierCtx.getImageData(0, 0, CLASSIFIER_SIZE, CLASSIFIER_SIZE).data;
-      const rgb = new Float32Array(CLASSIFIER_SIZE * CLASSIFIER_SIZE * 3);
-      let j = 0;
-      for (let i = 0; i < rgba.length; i += 4) {
-        rgb[j++] = rgba[i];
-        rgb[j++] = rgba[i + 1];
-        rgb[j++] = rgba[i + 2];
-      }
-      return rgb;
+      classifierCtx.drawImage(video, x, y, w, h, 0, 0, CLASSIFIER_SIZE, CLASSIFIER_SIZE);
+      const dataUrl = classifierCanvas.toDataURL('image/jpeg', 0.86);
+      const comma = dataUrl.indexOf(',');
+      return comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
     }
 
-    async function runTFLiteClassifier(inputData) {
-      // tfjs-tflite uses the regular TFLite Interpreter internally. That is
-      // important for this model because its FlatBuffer has a dynamic batch
-      // signature (-1,224,224,3) but a concrete runtime shape of
-      // (1,224,224,3). LiteRT.js CompiledModel currently checks the dynamic
-      // signature literally, while the Interpreter accepts the concrete batch.
-      const inputTensor = tf.tensor4d(
-        inputData,
-        [1, CLASSIFIER_SIZE, CLASSIFIER_SIZE, 3],
-        'float32'
-      );
-      let output = null;
-      try {
-        output = headbandModel.predict(inputTensor);
+    function normalizeClassName(name) {
+      return String(name || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+    }
 
-        // This model has one output tensor, but tolerate the array/map forms
-        // so the status message remains useful if the exported model changes.
-        let outputTensor = output;
-        if (Array.isArray(output)) outputTensor = output[0];
-        else if (!(output instanceof tf.Tensor) && output && typeof output === 'object') {
-          const keys = Object.keys(output);
-          outputTensor = keys.length ? output[keys[0]] : null;
+    function findPredictionArray(node, depth = 0) {
+      if (depth > 8 || node == null) return null;
+      if (Array.isArray(node)) {
+        if (node.length && node.every(x => x && typeof x === 'object') &&
+            node.some(x => ('class' in x || 'class_name' in x) && ('confidence' in x || 'score' in x))) {
+          return node;
         }
-        if (!outputTensor || typeof outputTensor.data !== 'function') {
-          throw new Error('TFLite model returned no readable output tensor.');
+        for (const item of node) {
+          const found = findPredictionArray(item, depth + 1);
+          if (found) return found;
         }
-
-        const values = await outputTensor.data();
-        return Array.from(values);
-      } finally {
-        inputTensor.dispose();
-        if (output) tf.dispose(output);
+        return null;
       }
+      if (typeof node === 'object') {
+        if (Array.isArray(node.predictions)) {
+          const found = findPredictionArray(node.predictions, depth + 1);
+          if (found) return found;
+        }
+        for (const value of Object.values(node)) {
+          const found = findPredictionArray(value, depth + 1);
+          if (found) return found;
+        }
+      }
+      return null;
     }
 
-    async function classifyHead(rect) {
-      if (!enableClassifier.checked) return { state: 'disabled' };
-      if (modelLoadState === 'loading') return { state: 'loading' };
-      if (!headbandModel || modelLoadState !== 'loaded') return { state: 'not-loaded' };
-
-      const inputData = makeClassifierInput(rect);
-      const probs = await runTFLiteClassifier(inputData);
-      return { state: 'ok', probs };
-    }
-
-    function classifyLabel(classification) {
-      if (!classification || classification.state !== 'ok') {
-        const state = classification ? classification.state : 'not-loaded';
-        const labelMap = {
-          'disabled': 'model off',
-          'loading': 'model loading',
-          'not-loaded': 'model not loaded'
-        };
-        return { label: labelMap[state] || 'model error', score: 0, headbandScore: 0, systemLabel: true };
+    function parseRoboflowResult(payload) {
+      const predictions = findPredictionArray(payload);
+      if (!predictions || !predictions.length) {
+        throw new Error('Roboflow returned no classification predictions.');
       }
 
-      const probs = classification.probs;
-      let headbandIdx = modelClassNames.indexOf('headband');
-      if (headbandIdx < 0) headbandIdx = 0;
-      const hb = Number(probs[headbandIdx] || 0);
+      const normalized = predictions.map(p => ({
+        className: normalizeClassName(p.class ?? p.class_name ?? p.label),
+        confidence: Number(p.confidence ?? p.score ?? p.probability ?? 0)
+      })).filter(p => p.className && Number.isFinite(p.confidence));
+
+      if (!normalized.length) throw new Error('Roboflow prediction format was not recognized.');
+
+      const hbPred = normalized.find(p => p.className === 'headband');
+      const noPred = normalized.find(p => p.className === 'no_headband' || p.className === 'noheadband');
+      const top = [...normalized].sort((a, b) => b.confidence - a.confidence)[0];
+
+      let headbandScore;
+      if (hbPred) headbandScore = hbPred.confidence;
+      else if (noPred && normalized.length === 1) headbandScore = 1 - noPred.confidence;
+      else if (top.className === 'headband') headbandScore = top.confidence;
+      else if (top.className === 'no_headband' || top.className === 'noheadband') headbandScore = 1 - top.confidence;
+      else throw new Error('Expected headband/no_headband classes; got ' + normalized.map(p => p.className).join(', '));
+
+      headbandScore = Math.max(0, Math.min(1, Number(headbandScore)));
       const threshold = Number(thresholdSlider.value);
-      return { label: hb >= threshold ? 'headband' : 'no_headband', score: hb, headbandScore: hb, systemLabel: false };
+      return {
+        label: headbandScore >= threshold ? 'headband' : 'no_headband',
+        score: headbandScore,
+        headbandScore,
+        systemLabel: false,
+        rawTopClass: top.className,
+        rawTopConfidence: top.confidence
+      };
+    }
+
+    function currentApiKey() {
+      return String(roboflowApiKey || '').trim();
+    }
+
+    async function callRoboflow(rect) {
+      const key = currentApiKey();
+      if (!key) throw new Error('API key required.');
+
+      const base64 = cropToBase64(rect);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), CLOUD_TIMEOUT_MS);
+      try {
+        const response = await fetch(ROBOFLOW_WORKFLOW_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + key
+          },
+          body: JSON.stringify({
+            inputs: {
+              image: { type: 'base64', value: base64 }
+            }
+          }),
+          signal: controller.signal,
+          cache: 'no-store'
+        });
+
+        const text = await response.text();
+        let payload = null;
+        try { payload = text ? JSON.parse(text) : {}; }
+        catch (_) { throw new Error(`Roboflow HTTP ${response.status}: non-JSON response`); }
+
+        if (!response.ok) {
+          const message = payload?.detail || payload?.message || payload?.error || text || response.statusText;
+          throw new Error(`Roboflow HTTP ${response.status}: ${String(message).slice(0, 180)}`);
+        }
+        return parseRoboflowResult(payload);
+      } catch (err) {
+        if (err && err.name === 'AbortError') throw new Error('Roboflow request timed out.');
+        throw err;
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+
+    function rectIou(a, b) {
+      const x1 = Math.max(a.x, b.x), y1 = Math.max(a.y, b.y);
+      const x2 = Math.min(a.x + a.w, b.x + b.w), y2 = Math.min(a.y + a.h, b.y + b.h);
+      const iw = Math.max(0, x2 - x1), ih = Math.max(0, y2 - y1);
+      const inter = iw * ih;
+      const union = a.w * a.h + b.w * b.h - inter;
+      return union > 0 ? inter / union : 0;
+    }
+
+    function centerDistance(a, b) {
+      const ax = a.x + a.w / 2, ay = a.y + a.h / 2;
+      const bx = b.x + b.w / 2, by = b.y + b.h / 2;
+      return Math.hypot(ax - bx, ay - by);
+    }
+
+    function matchCloudTrack(rect, claimed) {
+      let best = null, bestScore = -Infinity;
+      for (const track of cloudTracks) {
+        if (claimed.has(track.id)) continue;
+        const overlap = rectIou(rect, track.rect);
+        const dist = centerDistance(rect, track.rect);
+        const scale = Math.max(rect.w, rect.h, track.rect.w, track.rect.h, 1);
+        if (overlap < 0.03 && dist > scale * 0.9) continue;
+        const score = overlap * 4 - dist / scale;
+        if (score > bestScore) { best = track; bestScore = score; }
+      }
+      return best;
+    }
+
+    function canStartCloudRequest() {
+      const now = Date.now();
+      recentRequestStarts = recentRequestStarts.filter(t => now - t < 1000);
+      return activeCloudRequests < MAX_CONCURRENT_CLOUD && recentRequestStarts.length < Number(maxRequests.value);
+    }
+
+    function scheduleCloudClassification(track, rect) {
+      if (track.pending || !canStartCloudRequest()) return;
+      track.pending = true;
+      track.lastRequest = Date.now();
+      activeCloudRequests++;
+      recentRequestStarts.push(track.lastRequest);
+      cloudRequestCount++;
+      const requestRect = { ...rect };
+
+      callRoboflow(requestRect).then(result => {
+        track.result = result;
+        track.lastSuccess = Date.now();
+        lastCloudError = '';
+        setModelStatus(`connected | ${cloudRequestCount} requests | ${cloudErrorCount} errors`);
+      }).catch(err => {
+        cloudErrorCount++;
+        lastCloudError = err && err.message ? err.message : String(err);
+        track.result = { label: 'API error', score: 0, headbandScore: 0, systemLabel: true };
+        setModelStatus('error - ' + lastCloudError);
+        console.error('Roboflow classification error', err);
+      }).finally(() => {
+        track.pending = false;
+        activeCloudRequests = Math.max(0, activeCloudRequests - 1);
+        drawDetections(lastDetections);
+      });
+    }
+
+    function attachCloudResults(items) {
+      const now = Date.now();
+      cloudTracks = cloudTracks.filter(t => now - t.lastSeen < 6000);
+      const claimed = new Set();
+      const refreshMs = Number(cloudRefresh.value);
+      const sorted = [...items].sort((a, b) => (b.headRect?.w * b.headRect?.h || 0) - (a.headRect?.w * a.headRect?.h || 0));
+
+      for (const item of sorted) {
+        if (!item.headRect) continue;
+        let track = matchCloudTrack(item.headRect, claimed);
+        if (!track) {
+          track = {
+            id: cloudTrackCounter++,
+            rect: { ...item.headRect },
+            result: { label: currentApiKey() ? 'waiting' : 'API key needed', score: 0, headbandScore: 0, systemLabel: true },
+            pending: false,
+            lastSeen: now,
+            lastRequest: 0,
+            lastSuccess: 0
+          };
+          cloudTracks.push(track);
+        }
+        claimed.add(track.id);
+        track.rect = { ...item.headRect };
+        track.lastSeen = now;
+        item.cloudTrack = track;
+
+        if (!enableClassifier.checked) {
+          item.result = { label: 'cloud off', score: 0, headbandScore: 0, systemLabel: true };
+          continue;
+        }
+        if (!currentApiKey()) {
+          item.result = { label: 'API key needed', score: 0, headbandScore: 0, systemLabel: true };
+          continue;
+        }
+
+        item.result = track.result;
+        const stale = !track.lastSuccess || (now - track.lastSuccess >= refreshMs);
+        if (stale && !track.pending) scheduleCloudClassification(track, item.headRect);
+      }
+      return items;
+    }
+
+    function getItemResult(item) {
+      return item.cloudTrack ? item.cloudTrack.result : item.result;
     }
 
     function drawText(text, x, y, bg = 'rgba(0,0,0,0.65)', color = '#fff') {
@@ -367,7 +547,8 @@
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       const d = getCoverDimensions();
       for (const item of items) {
-        const isHeadband = item.result && item.result.label === 'headband';
+        const result = getItemResult(item);
+        const isHeadband = result && result.label === 'headband';
         const color = isHeadband ? '#00ff66' : '#ffd400';
         if (item.type === 'person' && showPersonBoxes.checked && item.personRect) {
           const r = toScreenRect(item.personRect);
@@ -381,7 +562,7 @@
             ctx.fillStyle = color; ctx.beginPath(); ctx.arc(r.x + r.w / 2, r.y + r.h / 2, 4, 0, Math.PI * 2); ctx.fill();
           }
           if (showLabels.checked) {
-            const text = item.result ? (item.result.systemLabel ? item.result.label : `${item.result.label} ${(item.result.headbandScore * 100).toFixed(0)}%`) : 'no model';
+            const text = result ? (result.systemLabel ? result.label : `${result.label} ${(result.headbandScore * 100).toFixed(0)}%`) : 'waiting';
             drawText(text, r.x, Math.max(18, r.y - 4), isHeadband ? 'rgba(0,120,40,0.85)' : 'rgba(0,0,0,0.65)');
           }
         }
@@ -390,16 +571,20 @@
 
     async function detectPersonMode() {
       const predictions = await personDetector.detect(video);
-      const people = predictions.filter(p => p.class === 'person' && p.score > 0.4);
-      const items = [];
-      for (const p of people) {
+      const people = predictions
+        .filter(p => p.class === 'person' && p.score > 0.4)
+        .sort((a, b) => (b.bbox[2] * b.bbox[3]) - (a.bbox[2] * a.bbox[3]));
+      const items = people.map(p => {
         const [x, y, w, h] = p.bbox;
-        const headRect = personHeadRect(p.bbox);
-        let result = null;
-        try { result = classifyLabel(await classifyHead(headRect)); } catch (e) { result = { label: 'model error', score: 0, headbandScore: 0 }; }
-        items.push({ type: 'person', personRect: { x, y, w, h }, headRect, result, score: p.score });
-      }
-      return items;
+        return {
+          type: 'person',
+          personRect: { x, y, w, h },
+          headRect: personHeadRect(p.bbox),
+          result: null,
+          score: p.score
+        };
+      });
+      return attachCloudResults(items);
     }
 
     async function detectSkeletonMode() {
@@ -410,11 +595,10 @@
       for (const pose of poses) {
         const headRect = skeletonHeadRect(pose);
         if (!headRect) continue;
-        let result = null;
-        try { result = classifyLabel(await classifyHead(headRect)); } catch (e) { result = { label: 'model error', score: 0, headbandScore: 0 }; }
-        items.push({ type: 'pose', pose, headRect, result, score: pose.score || 0 });
+        items.push({ type: 'pose', pose, headRect, result: null, score: pose.score || 0 });
       }
-      return items;
+      items.sort((a, b) => (b.headRect.w * b.headRect.h) - (a.headRect.w * a.headRect.h));
+      return attachCloudResults(items);
     }
 
     async function loop() {
@@ -432,8 +616,9 @@
         if (detectionMode.value === 'person') lastDetections = await detectPersonMode();
         else lastDetections = await detectSkeletonMode();
         drawDetections(lastDetections);
-        const hb = lastDetections.filter(d => d.result && d.result.label === 'headband').length;
-        status(`${detectionMode.value} | ${lastDetections.length} targets | ${hb} headband | ${fps} fps | model ${headbandModel ? 'on' : 'off'}`);
+        const hb = lastDetections.filter(d => { const r = getItemResult(d); return r && r.label === 'headband'; }).length;
+        const cloudState = !enableClassifier.checked ? 'off' : (!currentApiKey() ? 'key needed' : `${activeCloudRequests} active`);
+        status(`${detectionMode.value} | ${lastDetections.length} targets | ${hb} headband | ${fps} fps | cloud ${cloudState}`);
       } catch (err) {
         status('Detection error: ' + err.message, true);
       } finally {
@@ -468,113 +653,6 @@
       loop();
     }
 
-    async function loadHeadbandModel() {
-      if (modelLoadState === 'loading') return;
-      if (headbandModel && modelLoadState === 'loaded') {
-        setModelStatus('already loaded (TFLite/WASM)');
-        return;
-      }
-
-      modelLoadState = 'loading';
-      modelLoadError = '';
-      headbandModel = null;
-      enableClassifier.checked = false;
-      setModelStatus('checking ./model/headband_model.tflite');
-      status('Loading TFLite headband classifier...');
-
-      try {
-        if (!window.tflite || typeof window.tflite.loadTFLiteModel !== 'function') {
-          throw new Error('TFLite browser runtime did not load from the CDN.');
-        }
-
-        // tfjs-tflite uses separate WebAssembly files. On Safari/iOS the
-        // package cannot reliably infer their CDN location, which causes the
-        // characteristic "undefined ... _malloc" failure. Pin the exact
-        // directory before loading the model.
-        const TFLITE_WASM_PATH =
-          'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@0.0.1-alpha.10/dist/';
-        if (typeof window.tflite.setWasmPath === 'function') {
-          window.tflite.setWasmPath(TFLITE_WASM_PATH);
-        }
-
-        // Check the GitHub Pages model path ourselves so missing/HTML files
-        // produce a useful error. loadTFLiteModel itself must receive the URL,
-        // not the downloaded ArrayBuffer.
-        const modelUrl = HEADBAND_MODEL_URL + '?v=' + Date.now();
-        const response = await fetch(modelUrl, { cache: 'no-store' });
-        if (!response.ok) {
-          throw new Error(`Model HTTP ${response.status}: ${response.statusText}`);
-        }
-        const modelBytes = await response.arrayBuffer();
-        if (modelBytes.byteLength < 1024) {
-          throw new Error(`Model file is unexpectedly small (${modelBytes.byteLength} bytes).`);
-        }
-
-        setModelStatus(
-          `downloaded ${(modelBytes.byteLength / 1048576).toFixed(1)} MB; loading WASM interpreter...`
-        );
-
-        // One thread is the safest setting on GitHub Pages/iOS because
-        // multi-threaded WASM requires cross-origin isolation headers that
-        // GitHub Pages does not provide.
-        headbandModel = await window.tflite.loadTFLiteModel(modelUrl, {
-          numThreads: 1
-        });
-
-        const inputInfo = (headbandModel.inputs || []).map(x => ({
-          name: x.name,
-          shape: Array.from(x.shape || []),
-          dtype: x.dtype
-        }));
-        const outputInfo = (headbandModel.outputs || []).map(x => ({
-          name: x.name,
-          shape: Array.from(x.shape || []),
-          dtype: x.dtype
-        }));
-        console.log('TFLite inputs:', inputInfo);
-        console.log('TFLite outputs:', outputInfo);
-
-        // Validate the concrete input shape when the runtime exposes it.
-        if (inputInfo.length) {
-          const shape = inputInfo[0].shape;
-          const expected = [1, CLASSIFIER_SIZE, CLASSIFIER_SIZE, 3];
-          if (shape.length === 4 && shape.every(n => Number.isFinite(Number(n)))) {
-            const normalized = shape.map(Number);
-            const compatible = normalized.every((n, i) => n === expected[i] || (i === 0 && n === -1));
-            if (!compatible) {
-              throw new Error(`Unexpected model input shape [${normalized.join(', ')}]; expected [1, 224, 224, 3].`);
-            }
-          }
-        }
-
-        // Smoke-test with a real batch of one before enabling live inference.
-        const test = await runTFLiteClassifier(
-          new Float32Array(CLASSIFIER_SIZE * CLASSIFIER_SIZE * 3)
-        );
-        if (test.length < 2 || test.some(v => !Number.isFinite(Number(v)))) {
-          throw new Error('Model smoke test returned an invalid output: [' + test.join(', ') + ']');
-        }
-
-        modelLoadState = 'loaded';
-        enableClassifier.checked = true;
-        const inShape = inputInfo.length ? `[${inputInfo[0].shape.join(',')}]` : '[1,224,224,3]';
-        setModelStatus(
-          'loaded (TFLite/WASM) input ' + inShape +
-          '; test [' + test.slice(0, 4).map(v => Number(v).toFixed(3)).join(', ') + ']'
-        );
-        status('TFLite headband classifier loaded.');
-        console.log('Headband TFLite model ready', test);
-      } catch (err) {
-        headbandModel = null;
-        modelLoadState = 'failed';
-        modelLoadError = err && err.message ? err.message : String(err);
-        enableClassifier.checked = false;
-        setModelStatus('failed - ' + modelLoadError);
-        status('TFLite model failed. Person/pose detection still works: ' + modelLoadError, true);
-        console.error('TFLite model load failed', err);
-      }
-    }
-
     async function ensurePoseDetector() {
       if (poseDetector) return poseDetector;
       status('Loading MoveNet skeleton detector...');
@@ -593,9 +671,13 @@
       status('Loading COCO person detector...');
       personDetector = await cocoSsd.load({ base: 'mobilenet_v2' });
 
-      // Skeleton model is loaded only if/when skeleton mode is selected.
-      // The headband classifier runs directly from the .tflite file through the browser TFLite WASM runtime.
-      await loadHeadbandModel();
+      roboflowApiKey = sessionStorage.getItem('roboflowApiKey') || '';
+      if (roboflowApiKey) {
+        apiKeyInput.value = roboflowApiKey;
+        setModelStatus('API key ready; waiting for a head crop');
+      } else {
+        setModelStatus('API key required');
+      }
     }
 
     drawerTab.addEventListener('click', () => {
@@ -621,7 +703,57 @@
     resolutionSlider.addEventListener('change', startCamera);
     detectEvery.addEventListener('input', () => { detectEveryValue.textContent = detectEvery.value; });
     thresholdSlider.addEventListener('input', () => { thresholdValue.textContent = Number(thresholdSlider.value).toFixed(2); });
-    retryModelBtn.addEventListener('click', () => { if (modelLoadState === 'loaded') { setModelStatus('already loaded (TFLite/WASM)'); } else { loadHeadbandModel(); } });
+    cloudRefresh.addEventListener('input', updateCloudControlReadouts);
+    maxRequests.addEventListener('input', updateCloudControlReadouts);
+
+    saveApiKeyBtn.addEventListener('click', () => {
+      const key = apiKeyInput.value.trim();
+      if (!key) {
+        roboflowApiKey = '';
+        sessionStorage.removeItem('roboflowApiKey');
+        setModelStatus('API key required');
+        return;
+      }
+      roboflowApiKey = key;
+      sessionStorage.setItem('roboflowApiKey', key);
+      cloudTracks = [];
+      cloudErrorCount = 0;
+      cloudRequestCount = 0;
+      lastCloudError = '';
+      setModelStatus('API key ready; waiting for a head crop');
+    });
+
+    clearApiKeyBtn.addEventListener('click', () => {
+      roboflowApiKey = '';
+      apiKeyInput.value = '';
+      sessionStorage.removeItem('roboflowApiKey');
+      cloudTracks = [];
+      setModelStatus('API key cleared');
+    });
+
+    testApiBtn.addEventListener('click', async () => {
+      try {
+        if (!currentApiKey()) throw new Error('Enter an API key and tap Use key first.');
+        let candidates = lastDetections.filter(d => d.headRect);
+        if (!candidates.length) {
+          if (detectionMode.value === 'person') candidates = await detectPersonMode();
+          else candidates = await detectSkeletonMode();
+        }
+        if (!candidates.length) throw new Error('No visible head crop to test. Point the camera at a person.');
+        const largest = [...candidates].sort((a,b) => (b.headRect.w*b.headRect.h) - (a.headRect.w*a.headRect.h))[0];
+        setModelStatus('testing API...');
+        const result = await callRoboflow(largest.headRect);
+        setModelStatus(`test OK - ${result.label} ${(result.headbandScore * 100).toFixed(1)}% headband`);
+        if (largest.cloudTrack) largest.cloudTrack.result = result;
+        largest.result = result;
+        drawDetections(lastDetections);
+      } catch (err) {
+        const msg = err && err.message ? err.message : String(err);
+        setModelStatus('test failed - ' + msg);
+        status('Cloud API test failed: ' + msg, true);
+      }
+    });
+
     restartBtn.addEventListener('click', startCamera);
     showDebug.addEventListener('change', () => status('Debug display changed.'));
     window.addEventListener('resize', resizeCanvas);
@@ -631,6 +763,7 @@
         resizeCanvas();
         detectEveryValue.textContent = detectEvery.value;
         thresholdValue.textContent = Number(thresholdSlider.value).toFixed(2);
+        updateCloudControlReadouts();
         resolutionValue.textContent = resolutionMap[Number(resolutionSlider.value)].label;
         await loadAllModels();
         await startCamera();
