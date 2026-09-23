@@ -3,49 +3,135 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>Headband Tracker - Roboflow Cloud</title>
+  <title>Headband Tracker Base - Square Crops</title>
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <style>
     * { box-sizing: border-box; }
-    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #000; font-family: Arial, sans-serif; color: #fff; }
-    .app { position: fixed; inset: 0; overflow: hidden; background: #000; }
-    video, canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-    #status {
-      position: fixed; top: env(safe-area-inset-top, 0); left: 0; right: 0; z-index: 20;
-      padding: 8px 48px 8px 10px; background: rgba(0,0,0,0.65); color: #fff;
-      font-size: 13px; text-align: center; min-height: 32px;
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #000;
+      color: #fff;
+      font-family: Arial, sans-serif;
     }
-    #drawerTab {
-      position: fixed; right: 0; top: 50%; transform: translateY(-50%); z-index: 31;
-      width: 30px; height: 70px; border-radius: 12px 0 0 12px; border: 1px solid rgba(255,255,255,0.25); border-right: 0;
-      background: rgba(45,108,223,0.95); color: white; font-size: 24px; font-weight: 700;
-      display: flex; align-items: center; justify-content: center;
+    .app { position: fixed; inset: 0; background: #000; overflow: hidden; }
+    video, canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    #status {
+      position: fixed;
+      top: env(safe-area-inset-top, 0);
+      left: 0;
+      right: 0;
+      z-index: 20;
+      min-height: 32px;
+      padding: 8px 48px 8px 10px;
+      background: rgba(0,0,0,0.65);
+      color: #fff;
+      font-size: 13px;
+      text-align: center;
+      pointer-events: none;
     }
     #drawer {
-      position: fixed; top: 0; right: 0; bottom: 0; z-index: 30;
-      width: min(330px, 88vw); padding: calc(env(safe-area-inset-top, 0) + 14px) 14px calc(env(safe-area-inset-bottom, 0) + 14px);
-      background: rgba(20,20,20,0.96); border-left: 1px solid rgba(255,255,255,0.15);
-      transform: translateX(100%); transition: transform 180ms ease; overflow-y: auto;
+      position: fixed;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 30;
+      width: min(360px, 92vw);
+      padding: calc(env(safe-area-inset-top, 0) + 14px) 14px calc(env(safe-area-inset-bottom, 0) + 14px);
+      background: rgba(20,20,20,0.97);
+      border-left: 1px solid rgba(255,255,255,0.15);
+      transform: translateX(100%);
+      transition: transform 180ms ease;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
     }
     #drawer.open { transform: translateX(0); }
-    #drawer.open + #drawerTab { right: min(330px, 88vw); }
-    h2 { font-size: 17px; margin: 0 0 12px; }
-    .group { border-top: 1px solid rgba(255,255,255,0.15); padding-top: 12px; margin-top: 12px; }
-    label { display: block; font-size: 12px; color: #ccc; margin: 0 0 5px; }
-    select, button, input[type="range"], input[type="password"], input[type="text"], input[type="number"] { width: 100%; }
-    select, button, input[type="password"], input[type="text"], input[type="number"] {
-      padding: 10px; border: 1px solid #444; border-radius: 9px; background: #272727; color: white; font-size: 14px;
+    #drawerTab {
+      position: fixed;
+      right: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 31;
+      width: 32px;
+      height: 72px;
+      border: 1px solid rgba(255,255,255,0.25);
+      border-right: 0;
+      border-radius: 12px 0 0 12px;
+      background: rgba(45,108,223,0.96);
+      color: #fff;
+      font-size: 24px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
     }
-    button { background: #2d6cdf; font-weight: 700; border: 0; }
+    #drawer.open + #drawerTab { right: min(360px, 92vw); }
+    h2 { margin: 0 0 4px; font-size: 18px; }
+    .subtitle { color: #999; font-size: 12px; line-height: 1.35; margin-bottom: 12px; }
+    .group {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid rgba(255,255,255,0.14);
+    }
+    label { display: block; font-size: 12px; color: #ccc; margin: 0 0 5px; }
+    select, button, input[type="range"] { width: 100%; }
+    select, button {
+      border: 1px solid #444;
+      border-radius: 9px;
+      background: #272727;
+      color: #fff;
+      font-size: 14px;
+      padding: 10px;
+    }
+    button { background: #2d6cdf; border: 0; font-weight: 700; }
     button.secondary { background: #444; }
-    .button-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
-    .row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; margin: 10px 0; }
-    .checkrow { display: flex; gap: 8px; align-items: center; margin: 8px 0; font-size: 13px; color: #ddd; }
+    button:disabled { opacity: 0.45; }
+    .row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+      margin: 9px 0;
+    }
+    .value { min-width: 52px; text-align: right; color: #ddd; font-size: 13px; }
+    .checkrow {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 8px 0;
+      color: #ddd;
+      font-size: 13px;
+    }
     .checkrow input { width: auto; }
-    .value { font-size: 13px; color: #ddd; min-width: 46px; text-align: right; }
-    .hint { font-size: 12px; color: #aaa; line-height: 1.35; margin-top: 8px; }
-    .pill { display: inline-block; padding: 2px 7px; border-radius: 999px; background: #333; font-size: 12px; color: #ddd; }
+    .hint { margin-top: 7px; color: #999; font-size: 12px; line-height: 1.35; }
+    .pill {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 999px;
+      background: #333;
+      color: #ddd;
+      font-size: 12px;
+    }
+    .statusCard {
+      margin-top: 8px;
+      padding: 8px 9px;
+      border-radius: 8px;
+      border: 1px solid #333;
+      background: #101010;
+      color: #bbb;
+      font-size: 12px;
+      line-height: 1.4;
+    }
   </style>
 </head>
 <body>
@@ -53,10 +139,12 @@
     <video id="video" autoplay playsinline muted></video>
     <canvas id="canvas"></canvas>
   </div>
+
   <div id="status">Starting...</div>
 
   <aside id="drawer">
-    <h2>Headband Tracker - Roboflow Cloud v2</h2>
+    <h2>Headband Tracker - Base</h2>
+    <div class="subtitle">Clean model-free build. Person/head localization only.</div>
 
     <div>
       <label for="detectionMode">Detection mode</label>
@@ -64,61 +152,85 @@
         <option value="person">Person detection boxes</option>
         <option value="skeleton">Skeleton pose detection</option>
       </select>
+      <div class="hint">Person mode uses COCO-SSD. Skeleton mode lazy-loads MoveNet MultiPose.</div>
     </div>
 
     <div class="group">
       <label>Camera lens</label>
       <button id="lensToggle">Lens: Ultrawide</button>
-      <div class="hint">Ultrawide uses the smallest available zoom when supported.</div>
+      <div class="hint">Ultrawide requests the minimum rear-camera zoom Safari exposes. Normal uses the default rear-camera zoom.</div>
     </div>
 
     <div class="group">
-      <label for="resolutionSlider">Resolution</label>
-      <div class="row"><input id="resolutionSlider" type="range" min="0" max="2" value="1" step="1"><div id="resolutionValue" class="value">720p</div></div>
-      <label for="detectEvery">Detect every N frames</label>
-      <div class="row"><input id="detectEvery" type="range" min="1" max="10" value="2" step="1"><div id="detectEveryValue" class="value">2</div></div>
-    </div>
-
-    <div class="group">
-      <label>Headband classifier (Roboflow Cloud)</label>
-      <div class="checkrow"><input id="enableClassifier" type="checkbox" checked> <span>Run cloud headband classifier</span></div>
-
-      <label for="apiKeyInput">Roboflow API key</label>
-      <input id="apiKeyInput" type="password" inputmode="text" autocomplete="off" placeholder="Paste a NEW Roboflow API key" />
-      <div class="button-row">
-        <button id="saveApiKeyBtn">Use key</button>
-        <button id="clearApiKeyBtn" class="secondary">Clear key</button>
+      <label for="resolutionSlider">Camera resolution</label>
+      <div class="row">
+        <input id="resolutionSlider" type="range" min="0" max="2" value="1" step="1" />
+        <div id="resolutionValue" class="value">720p</div>
       </div>
-      <div class="hint">The key is kept only in this browser tab via sessionStorage and is never written into this HTML file.</div>
 
-      <label for="thresholdSlider" style="margin-top:10px;">Headband threshold</label>
-      <div class="row"><input id="thresholdSlider" type="range" min="0.05" max="0.95" value="0.65" step="0.05"><div id="thresholdValue" class="value">0.65</div></div>
+      <label for="detectEvery">Detect every N frames</label>
+      <div class="row">
+        <input id="detectEvery" type="range" min="1" max="10" value="2" step="1" />
+        <div id="detectEveryValue" class="value">2</div>
+      </div>
+    </div>
 
-      <label for="cloudRefresh">Refresh same target every</label>
-      <div class="row"><input id="cloudRefresh" type="range" min="500" max="5000" value="1500" step="250"><div id="cloudRefreshValue" class="value">1.5s</div></div>
+    <div class="group">
+      <label>Detection thresholds</label>
 
-      <label for="maxRequests">Max cloud requests / second</label>
-      <div class="row"><input id="maxRequests" type="range" min="1" max="10" value="4" step="1"><div id="maxRequestsValue" class="value">4</div></div>
+      <label for="personThreshold">Person score threshold</label>
+      <div class="row">
+        <input id="personThreshold" type="range" min="0.10" max="0.90" value="0.40" step="0.05" />
+        <div id="personThresholdValue" class="value">0.40</div>
+      </div>
 
-      <div class="hint">Workflow: <span class="pill">SkullyHeadbands3 ViT</span></div>
-      <button id="testApiBtn" class="secondary" style="margin-top:8px;">Test API on largest visible head</button>
-      <div id="modelStatus" class="hint">Cloud status: API key required</div>
+      <label for="poseThreshold">Pose score threshold</label>
+      <div class="row">
+        <input id="poseThreshold" type="range" min="0.05" max="0.90" value="0.18" step="0.01" />
+        <div id="poseThresholdValue" class="value">0.18</div>
+      </div>
+
+      <label for="keypointThreshold">Keypoint threshold</label>
+      <div class="row">
+        <input id="keypointThreshold" type="range" min="0.05" max="0.90" value="0.25" step="0.05" />
+        <div id="keypointThresholdValue" class="value">0.25</div>
+      </div>
+    </div>
+
+    <div class="group">
+      <label for="cropScale">Head crop scale</label>
+      <div class="row">
+        <input id="cropScale" type="range" min="0.75" max="2.00" value="1.00" step="0.05" />
+        <div id="cropScaleValue" class="value">1.00x</div>
+      </div>
+      <div class="hint">Scales the estimated square head crop around its center. Crops stay square and are shifted inward at frame edges instead of being stretched.</div>
     </div>
 
     <div class="group">
       <label>Overlays</label>
-      <div class="checkrow"><input id="showPersonBoxes" type="checkbox" checked> <span>Person boxes</span></div>
-      <div class="checkrow"><input id="showHeadBoxes" type="checkbox" checked> <span>Head crop boxes</span></div>
-      <div class="checkrow"><input id="showLabels" type="checkbox" checked> <span>Prediction labels</span></div>
-      <div class="checkrow"><input id="showSkeleton" type="checkbox" checked> <span>Skeleton/keypoints</span></div>
-      <div class="checkrow"><input id="showCenters" type="checkbox"> <span>Crop centers</span></div>
-      <div class="checkrow"><input id="showDebug" type="checkbox" checked> <span>Status/debug text</span></div>
+      <div class="checkrow"><input id="showPersonBoxes" type="checkbox" checked /> <span>Person boxes</span></div>
+      <div class="checkrow"><input id="showHeadBoxes" type="checkbox" checked /> <span>Head crop boxes</span></div>
+      <div class="checkrow"><input id="showDetectionLabels" type="checkbox" checked /> <span>Detection confidence / crop labels</span></div>
+      <div class="checkrow"><input id="showSkeleton" type="checkbox" checked /> <span>Skeleton lines</span></div>
+      <div class="checkrow"><input id="showKeypoints" type="checkbox" checked /> <span>Keypoints</span></div>
+      <div class="checkrow"><input id="showCenters" type="checkbox" /> <span>Head crop centers</span></div>
+      <div class="checkrow"><input id="showDebug" type="checkbox" checked /> <span>Status/debug text</span></div>
     </div>
 
     <div class="group">
       <button id="restartBtn">Restart camera</button>
+      <button id="reloadDetectorBtn" class="secondary" style="margin-top:8px;">Reload detector</button>
+      <div id="runtimeInfo" class="statusCard">Detector: starting...</div>
+    </div>
+
+    <div class="group">
+      <div class="statusCard">
+        <b>No headband model is included in this build.</b><br />
+        This base intentionally stops after person / pose detection and head-region localization.
+      </div>
     </div>
   </aside>
+
   <button id="drawerTab" aria-label="Open options">‹</button>
 
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
@@ -126,9 +238,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.3/dist/pose-detection.min.js"></script>
 
   <script>
-    const ROBOFLOW_WORKFLOW_URL = 'https://serverless.roboflow.com/nathan-pham-s-workspace/workflows/skullyheadbands3-vskullyheadbands3-3-vit-base-patch16-224-in21k-t1-logic';
-    const CLASSIFIER_SIZE = 224;
-    const CLOUD_TIMEOUT_MS = 15000;
+    'use strict';
 
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
@@ -143,46 +253,24 @@
     const resolutionValue = document.getElementById('resolutionValue');
     const detectEvery = document.getElementById('detectEvery');
     const detectEveryValue = document.getElementById('detectEveryValue');
-    const enableClassifier = document.getElementById('enableClassifier');
-    const apiKeyInput = document.getElementById('apiKeyInput');
-    const saveApiKeyBtn = document.getElementById('saveApiKeyBtn');
-    const clearApiKeyBtn = document.getElementById('clearApiKeyBtn');
-    const testApiBtn = document.getElementById('testApiBtn');
-    const modelStatus = document.getElementById('modelStatus');
-    const thresholdSlider = document.getElementById('thresholdSlider');
-    const thresholdValue = document.getElementById('thresholdValue');
-    const cloudRefresh = document.getElementById('cloudRefresh');
-    const cloudRefreshValue = document.getElementById('cloudRefreshValue');
-    const maxRequests = document.getElementById('maxRequests');
-    const maxRequestsValue = document.getElementById('maxRequestsValue');
+    const personThreshold = document.getElementById('personThreshold');
+    const personThresholdValue = document.getElementById('personThresholdValue');
+    const poseThreshold = document.getElementById('poseThreshold');
+    const poseThresholdValue = document.getElementById('poseThresholdValue');
+    const keypointThreshold = document.getElementById('keypointThreshold');
+    const keypointThresholdValue = document.getElementById('keypointThresholdValue');
+    const cropScale = document.getElementById('cropScale');
+    const cropScaleValue = document.getElementById('cropScaleValue');
     const showPersonBoxes = document.getElementById('showPersonBoxes');
     const showHeadBoxes = document.getElementById('showHeadBoxes');
-    const showLabels = document.getElementById('showLabels');
+    const showDetectionLabels = document.getElementById('showDetectionLabels');
     const showSkeleton = document.getElementById('showSkeleton');
+    const showKeypoints = document.getElementById('showKeypoints');
     const showCenters = document.getElementById('showCenters');
     const showDebug = document.getElementById('showDebug');
     const restartBtn = document.getElementById('restartBtn');
-
-    let currentStream = null;
-    let personDetector = null;
-    let poseDetector = null;
-    let isRunning = false;
-    let currentLens = 'ultrawide'; // default camera lens
-    let frameIndex = 0;
-    let lastDetections = [];
-    let busy = false;
-    let lastFpsTime = performance.now();
-    let fpsFrames = 0;
-    let fps = 0;
-    let roboflowApiKey = '';
-    let cloudTracks = [];
-    let cloudTrackCounter = 1;
-    let activeCloudRequests = 0;
-    let recentRequestStarts = [];
-    let cloudRequestCount = 0;
-    let cloudErrorCount = 0;
-    let lastCloudError = '';
-    const MAX_CONCURRENT_CLOUD = 3;
+    const reloadDetectorBtn = document.getElementById('reloadDetectorBtn');
+    const runtimeInfo = document.getElementById('runtimeInfo');
 
     const resolutionMap = [
       { label: '480p', width: 854, height: 480 },
@@ -190,45 +278,110 @@
       { label: '1080p', width: 1920, height: 1080 }
     ];
 
-    // Cloud-classifier crop canvas. Each detected head region is resized to
-    // 224x224 JPEG and sent as base64 to the Roboflow Workflow.
-    const classifierCanvas = document.createElement('canvas');
-    classifierCanvas.width = CLASSIFIER_SIZE;
-    classifierCanvas.height = CLASSIFIER_SIZE;
-    const classifierCtx = classifierCanvas.getContext('2d', { willReadFrequently: true });
+    let currentStream = null;
+    let currentLens = 'ultrawide';
+    let personDetector = null;
+    let poseDetector = null;
+    let isRunning = false;
+    let busy = false;
+    let frameIndex = 0;
+    let lastDetections = [];
+    let fpsFrames = 0;
+    let fps = 0;
+    let lastFpsTime = performance.now();
+    let loopToken = 0;
 
     function status(text, error = false) {
-      if (!showDebug.checked && !error) { statusEl.style.display = 'none'; return; }
+      if (!showDebug.checked && !error) {
+        statusEl.style.display = 'none';
+        return;
+      }
       statusEl.style.display = 'block';
       statusEl.textContent = text;
-      statusEl.style.background = error ? 'rgba(120,0,0,0.85)' : 'rgba(0,0,0,0.65)';
+      statusEl.style.background = error ? 'rgba(120,0,0,0.88)' : 'rgba(0,0,0,0.65)';
+    }
+
+    function updateRuntimeInfo(extra = '') {
+      const modeName = detectionMode.value === 'person' ? 'COCO-SSD person' : 'MoveNet MultiPose';
+      const v = video.videoWidth && video.videoHeight ? `${video.videoWidth}x${video.videoHeight}` : 'camera not ready';
+      runtimeInfo.innerHTML =
+        `Detector: <span class="pill">${modeName}</span><br>` +
+        `Camera: ${v}<br>` +
+        `Lens request: ${currentLens}<br>` +
+        `FPS: ${fps}` +
+        (extra ? `<br>${extra}` : '');
+    }
+
+    function updateControlLabels() {
+      resolutionValue.textContent = resolutionMap[Number(resolutionSlider.value)].label;
+      detectEveryValue.textContent = detectEvery.value;
+      personThresholdValue.textContent = Number(personThreshold.value).toFixed(2);
+      poseThresholdValue.textContent = Number(poseThreshold.value).toFixed(2);
+      keypointThresholdValue.textContent = Number(keypointThreshold.value).toFixed(2);
+      cropScaleValue.textContent = Number(cropScale.value).toFixed(2) + 'x';
+      lensToggle.textContent = 'Lens: ' + (currentLens === 'ultrawide' ? 'Ultrawide' : 'Normal');
     }
 
     function resizeCanvas() {
-      canvas.width = canvas.offsetWidth;
-      canvas.height = canvas.offsetHeight;
+      const rect = canvas.getBoundingClientRect();
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.max(1, Math.round(rect.width * dpr));
+      canvas.height = Math.max(1, Math.round(rect.height * dpr));
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    function displaySize() {
+      return {
+        width: canvas.getBoundingClientRect().width,
+        height: canvas.getBoundingClientRect().height
+      };
     }
 
     function getCoverDimensions() {
-      const screenW = canvas.width, screenH = canvas.height;
-      const videoW = video.videoWidth || 16, videoH = video.videoHeight || 9;
-      const screenRatio = screenW / screenH, videoRatio = videoW / videoH;
+      const screen = displaySize();
+      const screenW = screen.width;
+      const screenH = screen.height;
+      const videoW = video.videoWidth || 16;
+      const videoH = video.videoHeight || 9;
+      const screenRatio = screenW / screenH;
+      const videoRatio = videoW / videoH;
       let drawW, drawH, offsetX, offsetY;
+
       if (screenRatio > videoRatio) {
-        drawW = screenW; drawH = screenW / videoRatio; offsetX = 0; offsetY = (screenH - drawH) / 2;
+        drawW = screenW;
+        drawH = screenW / videoRatio;
+        offsetX = 0;
+        offsetY = (screenH - drawH) / 2;
       } else {
-        drawH = screenH; drawW = screenH * videoRatio; offsetX = (screenW - drawW) / 2; offsetY = 0;
+        drawH = screenH;
+        drawW = screenH * videoRatio;
+        offsetX = (screenW - drawW) / 2;
+        offsetY = 0;
       }
-      return { drawW, drawH, offsetX, offsetY, scaleX: drawW / videoW, scaleY: drawH / videoH };
+
+      return {
+        drawW,
+        drawH,
+        offsetX,
+        offsetY,
+        scaleX: drawW / videoW,
+        scaleY: drawH / videoH
+      };
     }
 
     function toScreenRect(rect) {
       const d = getCoverDimensions();
-      return { x: rect.x * d.scaleX + d.offsetX, y: rect.y * d.scaleY + d.offsetY, w: rect.w * d.scaleX, h: rect.h * d.scaleY };
+      return {
+        x: rect.x * d.scaleX + d.offsetX,
+        y: rect.y * d.scaleY + d.offsetY,
+        w: rect.w * d.scaleX,
+        h: rect.h * d.scaleY
+      };
     }
 
     function clampRect(x, y, w, h) {
-      const maxW = video.videoWidth || 1, maxH = video.videoHeight || 1;
+      const maxW = video.videoWidth || 1;
+      const maxH = video.videoHeight || 1;
       const nx = Math.max(0, Math.min(x, maxW - 1));
       const ny = Math.max(0, Math.min(y, maxH - 1));
       const nw = Math.max(1, Math.min(w, maxW - nx));
@@ -236,457 +389,184 @@
       return { x: nx, y: ny, w: nw, h: nh };
     }
 
+    function clampSquare(cx, cy, size) {
+      const maxW = video.videoWidth || 1;
+      const maxH = video.videoHeight || 1;
+
+      // Keep the crop strictly square. If it would extend beyond the frame,
+      // shift the square inward rather than shrinking only one dimension.
+      const side = Math.max(1, Math.min(size, maxW, maxH));
+      let x = cx - side / 2;
+      let y = cy - side / 2;
+
+      x = Math.max(0, Math.min(x, maxW - side));
+      y = Math.max(0, Math.min(y, maxH - side));
+
+      return { x, y, w: side, h: side };
+    }
+
+    function scaleSquareAboutCenter(rect, scale) {
+      const cx = rect.x + rect.w / 2;
+      const cy = rect.y + rect.h / 2;
+      const side = Math.max(rect.w, rect.h) * scale;
+      return clampSquare(cx, cy, side);
+    }
+
     function personHeadRect(bbox) {
       const [x, y, w, h] = bbox;
-      const headH = h * 0.28;
-      const padX = w * 0.08;
-      const padTop = h * 0.03;
-      return clampRect(x - padX, y + padTop, w + padX * 2, headH);
+
+      // COCO gives a full-person rectangle. Estimate a head center near the
+      // top of that rectangle, then construct a square around it. The side
+      // length scales with person width so nearby and distant people both
+      // receive proportionally sized crops.
+      const headCenterX = x + w * 0.50;
+      const headCenterY = y + h * 0.14;
+      const baseSide = Math.max(w * 1.16, h * 0.24, 32);
+      const side = baseSide * Number(cropScale.value);
+
+      return clampSquare(headCenterX, headCenterY, side);
     }
 
-    function kpMap(pose) {
-      const out = {};
-      for (const kp of pose.keypoints || []) out[kp.name] = kp;
-      return out;
+    function keypointMap(pose) {
+      const map = {};
+      for (const kp of pose.keypoints || []) {
+        if (kp.name) map[kp.name] = kp;
+      }
+      return map;
     }
 
-    function goodKp(kp, min = 0.25) {
-      return kp && (kp.score == null || kp.score >= min);
+    function goodKeypoint(kp) {
+      return !!kp && (kp.score == null || kp.score >= Number(keypointThreshold.value));
     }
 
     function skeletonHeadRect(pose) {
-      const k = kpMap(pose);
-      const head = [k.nose, k.left_eye, k.right_eye, k.left_ear, k.right_ear].filter(p => goodKp(p));
-      const shoulders = [k.left_shoulder, k.right_shoulder].filter(p => goodKp(p));
-      if (!head.length) return null;
-      const xs = head.map(p => p.x), ys = head.map(p => p.y);
-      let minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+      const k = keypointMap(pose);
+      const headPoints = [k.nose, k.left_eye, k.right_eye, k.left_ear, k.right_ear].filter(goodKeypoint);
+      const shoulders = [k.left_shoulder, k.right_shoulder].filter(goodKeypoint);
+      if (!headPoints.length) return null;
+
+      const xs = headPoints.map(p => p.x);
+      const ys = headPoints.map(p => p.y);
+      const minX = Math.min(...xs);
+      const maxX = Math.max(...xs);
+      const minY = Math.min(...ys);
+      const maxY = Math.max(...ys);
       const shoulderW = shoulders.length === 2 ? Math.abs(shoulders[0].x - shoulders[1].x) : 0;
       const faceW = Math.max(maxX - minX, shoulderW * 0.33, 32);
-      const size = faceW * 1.9;
+      const baseSize = faceW * 1.9;
       const cx = (minX + maxX) / 2;
-      const cy = (minY + maxY) / 2 + size * 0.08;
-      return clampRect(cx - size / 2, cy - size / 2, size, size);
+      const cy = (minY + maxY) / 2 + baseSize * 0.08;
+      return clampSquare(cx, cy, baseSize * Number(cropScale.value));
     }
 
-    function setModelStatus(text) {
-      if (modelStatus) modelStatus.textContent = 'Cloud status: ' + text;
-    }
-
-    function updateCloudControlReadouts() {
-      cloudRefreshValue.textContent = (Number(cloudRefresh.value) / 1000).toFixed(Number(cloudRefresh.value) % 1000 ? 2 : 1).replace(/0$/, '') + 's';
-      maxRequestsValue.textContent = maxRequests.value;
-    }
-
-    function cropToBase64(rect) {
-      const x = Math.max(0, Math.floor(rect.x));
-      const y = Math.max(0, Math.floor(rect.y));
-      const w = Math.max(1, Math.min(Math.floor(rect.w), video.videoWidth - x));
-      const h = Math.max(1, Math.min(Math.floor(rect.h), video.videoHeight - y));
-
-      classifierCtx.clearRect(0, 0, CLASSIFIER_SIZE, CLASSIFIER_SIZE);
-      classifierCtx.drawImage(video, x, y, w, h, 0, 0, CLASSIFIER_SIZE, CLASSIFIER_SIZE);
-      const dataUrl = classifierCanvas.toDataURL('image/jpeg', 0.86);
-      const comma = dataUrl.indexOf(',');
-      return comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
-    }
-
-    function normalizeClassName(name) {
-      return String(name || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
-    }
-
-    function findPredictionArray(node, depth = 0) {
-      if (depth > 8 || node == null) return null;
-      if (Array.isArray(node)) {
-        if (node.length && node.every(x => x && typeof x === 'object') &&
-            node.some(x => ('class' in x || 'class_name' in x) && ('confidence' in x || 'score' in x))) {
-          return node;
-        }
-        for (const item of node) {
-          const found = findPredictionArray(item, depth + 1);
-          if (found) return found;
-        }
-        return null;
-      }
-      if (typeof node === 'object') {
-        if (Array.isArray(node.predictions)) {
-          const found = findPredictionArray(node.predictions, depth + 1);
-          if (found) return found;
-        }
-        for (const value of Object.values(node)) {
-          const found = findPredictionArray(value, depth + 1);
-          if (found) return found;
-        }
-      }
-      return null;
-    }
-
-    function parseRoboflowResult(payload) {
-      const predictions = findPredictionArray(payload);
-      if (!predictions || !predictions.length) {
-        throw new Error('Roboflow returned no classification predictions.');
-      }
-
-      const normalized = predictions.map(p => ({
-        className: normalizeClassName(p.class ?? p.class_name ?? p.label),
-        confidence: Number(p.confidence ?? p.score ?? p.probability ?? 0)
-      })).filter(p => p.className && Number.isFinite(p.confidence));
-
-      if (!normalized.length) throw new Error('Roboflow prediction format was not recognized.');
-
-      const hbPred = normalized.find(p => p.className === 'headband');
-      const noPred = normalized.find(p => p.className === 'no_headband' || p.className === 'noheadband');
-      const top = [...normalized].sort((a, b) => b.confidence - a.confidence)[0];
-
-      let headbandScore;
-      if (hbPred) headbandScore = hbPred.confidence;
-      else if (noPred && normalized.length === 1) headbandScore = 1 - noPred.confidence;
-      else if (top.className === 'headband') headbandScore = top.confidence;
-      else if (top.className === 'no_headband' || top.className === 'noheadband') headbandScore = 1 - top.confidence;
-      else throw new Error('Expected headband/no_headband classes; got ' + normalized.map(p => p.className).join(', '));
-
-      headbandScore = Math.max(0, Math.min(1, Number(headbandScore)));
-      const threshold = Number(thresholdSlider.value);
-      return {
-        label: headbandScore >= threshold ? 'headband' : 'no_headband',
-        score: headbandScore,
-        headbandScore,
-        systemLabel: false,
-        rawTopClass: top.className,
-        rawTopConfidence: top.confidence
-      };
-    }
-
-    function currentApiKey() {
-      return String(roboflowApiKey || '').trim();
-    }
-
-    async function parseRoboflowHttpResponse(response) {
-      const text = await response.text();
-      let payload = null;
-      try { payload = text ? JSON.parse(text) : {}; }
-      catch (_) { throw new Error(`Roboflow HTTP ${response.status}: non-JSON response`); }
-
-      if (!response.ok) {
-        const message = payload?.detail || payload?.message || payload?.error || text || response.statusText;
-        throw new Error(`Roboflow HTTP ${response.status}: ${String(message).slice(0, 220)}`);
-      }
-      return payload;
-    }
-
-    async function callRoboflow(rect) {
-      const key = currentApiKey();
-      if (!key) throw new Error('API key required.');
-
-      const base64 = cropToBase64(rect);
-      const requestBody = {
-        api_key: key,
-        inputs: {
-          image: { type: 'base64', value: base64 }
-        }
-      };
-
-      // Safari reports many cross-origin failures only as "Load failed".
-      // First use Roboflow's body-auth form because it avoids the custom
-      // Authorization header that can trigger stricter CORS preflight checks.
-      let lastNetworkError = null;
-      for (let attempt = 0; attempt < 2; attempt++) {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), CLOUD_TIMEOUT_MS);
-        try {
-          const options = {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestBody),
-            signal: controller.signal,
-            cache: 'no-store',
-            mode: 'cors'
-          };
-
-          // Fallback to the newer Authorization-header form on the second try.
-          if (attempt === 1) {
-            options.headers['Authorization'] = 'Bearer ' + key;
-            options.body = JSON.stringify({
-              inputs: { image: { type: 'base64', value: base64 } }
-            });
-          }
-
-          const response = await fetch(ROBOFLOW_WORKFLOW_URL, options);
-          const payload = await parseRoboflowHttpResponse(response);
-          return parseRoboflowResult(payload);
-        } catch (err) {
-          if (err && err.name === 'AbortError') {
-            lastNetworkError = new Error('Roboflow request timed out.');
-          } else if (err instanceof TypeError || /load failed|failed to fetch|network/i.test(String(err?.message || err))) {
-            lastNetworkError = new Error(
-              'Browser could not reach the Roboflow API (Safari/CORS/network block). ' +
-              'This happened before Roboflow returned an HTTP status.'
-            );
-          } else {
-            // An HTTP response reached us; changing auth style will not fix it.
-            throw err;
-          }
-        } finally {
-          clearTimeout(timeout);
-        }
-      }
-      throw lastNetworkError || new Error('Roboflow request failed before receiving a response.');
-    }
-
-    function rectIou(a, b) {
-      const x1 = Math.max(a.x, b.x), y1 = Math.max(a.y, b.y);
-      const x2 = Math.min(a.x + a.w, b.x + b.w), y2 = Math.min(a.y + a.h, b.y + b.h);
-      const iw = Math.max(0, x2 - x1), ih = Math.max(0, y2 - y1);
-      const inter = iw * ih;
-      const union = a.w * a.h + b.w * b.h - inter;
-      return union > 0 ? inter / union : 0;
-    }
-
-    function centerDistance(a, b) {
-      const ax = a.x + a.w / 2, ay = a.y + a.h / 2;
-      const bx = b.x + b.w / 2, by = b.y + b.h / 2;
-      return Math.hypot(ax - bx, ay - by);
-    }
-
-    function matchCloudTrack(rect, claimed) {
-      let best = null, bestScore = -Infinity;
-      for (const track of cloudTracks) {
-        if (claimed.has(track.id)) continue;
-        const overlap = rectIou(rect, track.rect);
-        const dist = centerDistance(rect, track.rect);
-        const scale = Math.max(rect.w, rect.h, track.rect.w, track.rect.h, 1);
-        if (overlap < 0.03 && dist > scale * 0.9) continue;
-        const score = overlap * 4 - dist / scale;
-        if (score > bestScore) { best = track; bestScore = score; }
-      }
-      return best;
-    }
-
-    function canStartCloudRequest() {
-      const now = Date.now();
-      recentRequestStarts = recentRequestStarts.filter(t => now - t < 1000);
-      return activeCloudRequests < MAX_CONCURRENT_CLOUD && recentRequestStarts.length < Number(maxRequests.value);
-    }
-
-    function scheduleCloudClassification(track, rect) {
-      if (track.pending || !canStartCloudRequest()) return;
-      track.pending = true;
-      track.lastRequest = Date.now();
-      activeCloudRequests++;
-      recentRequestStarts.push(track.lastRequest);
-      cloudRequestCount++;
-      const requestRect = { ...rect };
-
-      callRoboflow(requestRect).then(result => {
-        track.result = result;
-        track.lastSuccess = Date.now();
-        lastCloudError = '';
-        setModelStatus(`connected | ${cloudRequestCount} requests | ${cloudErrorCount} errors`);
-      }).catch(err => {
-        cloudErrorCount++;
-        lastCloudError = err && err.message ? err.message : String(err);
-        track.result = { label: 'API error', score: 0, headbandScore: 0, systemLabel: true };
-        setModelStatus('error - ' + lastCloudError);
-        console.error('Roboflow classification error', err);
-      }).finally(() => {
-        track.pending = false;
-        activeCloudRequests = Math.max(0, activeCloudRequests - 1);
-        drawDetections(lastDetections);
-      });
-    }
-
-    function attachCloudResults(items) {
-      const now = Date.now();
-      cloudTracks = cloudTracks.filter(t => now - t.lastSeen < 6000);
-      const claimed = new Set();
-      const refreshMs = Number(cloudRefresh.value);
-      const sorted = [...items].sort((a, b) => (b.headRect?.w * b.headRect?.h || 0) - (a.headRect?.w * a.headRect?.h || 0));
-
-      for (const item of sorted) {
-        if (!item.headRect) continue;
-        let track = matchCloudTrack(item.headRect, claimed);
-        if (!track) {
-          track = {
-            id: cloudTrackCounter++,
-            rect: { ...item.headRect },
-            result: { label: currentApiKey() ? 'waiting' : 'API key needed', score: 0, headbandScore: 0, systemLabel: true },
-            pending: false,
-            lastSeen: now,
-            lastRequest: 0,
-            lastSuccess: 0
-          };
-          cloudTracks.push(track);
-        }
-        claimed.add(track.id);
-        track.rect = { ...item.headRect };
-        track.lastSeen = now;
-        item.cloudTrack = track;
-
-        if (!enableClassifier.checked) {
-          item.result = { label: 'cloud off', score: 0, headbandScore: 0, systemLabel: true };
-          continue;
-        }
-        if (!currentApiKey()) {
-          item.result = { label: 'API key needed', score: 0, headbandScore: 0, systemLabel: true };
-          continue;
-        }
-
-        item.result = track.result;
-        const stale = !track.lastSuccess || (now - track.lastSuccess >= refreshMs);
-        if (stale && !track.pending) scheduleCloudClassification(track, item.headRect);
-      }
-      return items;
-    }
-
-    function getItemResult(item) {
-      return item.cloudTrack ? item.cloudTrack.result : item.result;
-    }
-
-    function drawText(text, x, y, bg = 'rgba(0,0,0,0.65)', color = '#fff') {
+    function drawText(text, x, y, background = 'rgba(0,0,0,0.72)', color = '#fff') {
       ctx.font = '14px Arial';
-      const pad = 4;
-      const m = ctx.measureText(text);
-      ctx.fillStyle = bg;
-      ctx.fillRect(x, y - 16, m.width + pad * 2, 20);
+      const padding = 4;
+      const metrics = ctx.measureText(text);
+      const top = Math.max(0, y - 17);
+      ctx.fillStyle = background;
+      ctx.fillRect(x, top, metrics.width + padding * 2, 20);
       ctx.fillStyle = color;
-      ctx.fillText(text, x + pad, y - 2);
+      ctx.fillText(text, x + padding, top + 15);
     }
 
-    function drawSkeleton(pose) {
-      const pairs = poseDetection.util.getAdjacentPairs(poseDetection.SupportedModels.MoveNet);
+    function drawSkeletonPose(pose) {
       const d = getCoverDimensions();
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = 'rgba(0,255,0,0.85)';
-      for (const [i, j] of pairs) {
-        const a = pose.keypoints[i], b = pose.keypoints[j];
-        if (!goodKp(a) || !goodKp(b)) continue;
-        ctx.beginPath();
-        ctx.moveTo(a.x * d.scaleX + d.offsetX, a.y * d.scaleY + d.offsetY);
-        ctx.lineTo(b.x * d.scaleX + d.offsetX, b.y * d.scaleY + d.offsetY);
-        ctx.stroke();
+      const threshold = Number(keypointThreshold.value);
+
+      if (showSkeleton.checked) {
+        const pairs = poseDetection.util.getAdjacentPairs(poseDetection.SupportedModels.MoveNet);
+        ctx.strokeStyle = 'rgba(0,255,0,0.85)';
+        ctx.lineWidth = 2;
+        for (const [i, j] of pairs) {
+          const a = pose.keypoints[i];
+          const b = pose.keypoints[j];
+          if (!a || !b) continue;
+          if ((a.score ?? 1) < threshold || (b.score ?? 1) < threshold) continue;
+          ctx.beginPath();
+          ctx.moveTo(a.x * d.scaleX + d.offsetX, a.y * d.scaleY + d.offsetY);
+          ctx.lineTo(b.x * d.scaleX + d.offsetX, b.y * d.scaleY + d.offsetY);
+          ctx.stroke();
+        }
       }
-      for (const kp of pose.keypoints || []) {
-        if (!goodKp(kp)) continue;
-        ctx.fillStyle = ['nose','left_eye','right_eye','left_ear','right_ear'].includes(kp.name) ? 'red' : 'lime';
-        ctx.beginPath();
-        ctx.arc(kp.x * d.scaleX + d.offsetX, kp.y * d.scaleY + d.offsetY, 3, 0, Math.PI * 2);
-        ctx.fill();
+
+      if (showKeypoints.checked) {
+        for (const kp of pose.keypoints || []) {
+          if ((kp.score ?? 1) < threshold) continue;
+          const isHead = ['nose','left_eye','right_eye','left_ear','right_ear'].includes(kp.name);
+          ctx.fillStyle = isHead ? '#ff4040' : '#00ff66';
+          ctx.beginPath();
+          ctx.arc(kp.x * d.scaleX + d.offsetX, kp.y * d.scaleY + d.offsetY, 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
     }
 
     function drawDetections(items) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      const d = getCoverDimensions();
+      const size = displaySize();
+      ctx.clearRect(0, 0, size.width, size.height);
+
       for (const item of items) {
-        const result = getItemResult(item);
-        const isHeadband = result && result.label === 'headband';
-        const color = isHeadband ? '#00ff66' : '#ffd400';
         if (item.type === 'person' && showPersonBoxes.checked && item.personRect) {
           const r = toScreenRect(item.personRect);
-          ctx.strokeStyle = 'rgba(0,255,0,0.85)'; ctx.lineWidth = 2; ctx.strokeRect(r.x, r.y, r.w, r.h);
+          ctx.strokeStyle = 'rgba(0,255,0,0.88)';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(r.x, r.y, r.w, r.h);
+          if (showDetectionLabels.checked) {
+            drawText(`person ${(item.score * 100).toFixed(0)}%`, r.x, r.y - 3, 'rgba(0,90,0,0.80)');
+          }
         }
-        if (item.type === 'pose' && showSkeleton.checked && item.pose) drawSkeleton(item.pose);
+
+        if (item.type === 'pose' && item.pose) {
+          drawSkeletonPose(item.pose);
+        }
+
         if (showHeadBoxes.checked && item.headRect) {
           const r = toScreenRect(item.headRect);
-          ctx.strokeStyle = color; ctx.lineWidth = isHeadband ? 4 : 2; ctx.strokeRect(r.x, r.y, r.w, r.h);
+          ctx.strokeStyle = '#ffd400';
+          ctx.lineWidth = 3;
+          ctx.strokeRect(r.x, r.y, r.w, r.h);
+
           if (showCenters.checked) {
-            ctx.fillStyle = color; ctx.beginPath(); ctx.arc(r.x + r.w / 2, r.y + r.h / 2, 4, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#ffd400';
+            ctx.beginPath();
+            ctx.arc(r.x + r.w / 2, r.y + r.h / 2, 4, 0, Math.PI * 2);
+            ctx.fill();
           }
-          if (showLabels.checked) {
-            const text = result ? (result.systemLabel ? result.label : `${result.label} ${(result.headbandScore * 100).toFixed(0)}%`) : 'waiting';
-            drawText(text, r.x, Math.max(18, r.y - 4), isHeadband ? 'rgba(0,120,40,0.85)' : 'rgba(0,0,0,0.65)');
+
+          if (showDetectionLabels.checked) {
+            drawText('head crop', r.x, r.y + 18, 'rgba(100,80,0,0.84)');
           }
         }
       }
     }
 
-    async function detectPersonMode() {
-      const predictions = await personDetector.detect(video);
-      const people = predictions
-        .filter(p => p.class === 'person' && p.score > 0.4)
-        .sort((a, b) => (b.bbox[2] * b.bbox[3]) - (a.bbox[2] * a.bbox[3]));
-      const items = people.map(p => {
-        const [x, y, w, h] = p.bbox;
-        return {
-          type: 'person',
-          personRect: { x, y, w, h },
-          headRect: personHeadRect(p.bbox),
-          result: null,
-          score: p.score
-        };
-      });
-      return attachCloudResults(items);
+    async function ensureTensorFlowReady() {
+      if (tf.getBackend()) return;
+      await tf.setBackend('webgl');
+      await tf.ready();
     }
 
-    async function detectSkeletonMode() {
-      await ensurePoseDetector();
-      const posesRaw = await poseDetector.estimatePoses(video, { maxPoses: 20, flipHorizontal: false });
-      const poses = posesRaw.filter(p => p.score == null || p.score >= 0.18);
-      const items = [];
-      for (const pose of poses) {
-        const headRect = skeletonHeadRect(pose);
-        if (!headRect) continue;
-        items.push({ type: 'pose', pose, headRect, result: null, score: pose.score || 0 });
+    async function ensurePersonDetector(forceReload = false) {
+      await ensureTensorFlowReady();
+      if (forceReload && personDetector && typeof personDetector.dispose === 'function') {
+        try { personDetector.dispose(); } catch (_) {}
+        personDetector = null;
       }
-      items.sort((a, b) => (b.headRect.w * b.headRect.h) - (a.headRect.w * a.headRect.h));
-      return attachCloudResults(items);
+      if (personDetector) return personDetector;
+      status('Loading COCO person detector...');
+      personDetector = await cocoSsd.load({ base: 'mobilenet_v2' });
+      return personDetector;
     }
 
-    async function loop() {
-      if (!isRunning) return;
-      requestAnimationFrame(loop);
-      if (busy || video.readyState < 2) return;
-      frameIndex++;
-      fpsFrames++;
-      const now = performance.now();
-      if (now - lastFpsTime > 1000) { fps = fpsFrames; fpsFrames = 0; lastFpsTime = now; }
-      const every = Math.max(1, Number(detectEvery.value));
-      if (frameIndex % every !== 0) { drawDetections(lastDetections); return; }
-      busy = true;
-      try {
-        if (detectionMode.value === 'person') lastDetections = await detectPersonMode();
-        else lastDetections = await detectSkeletonMode();
-        drawDetections(lastDetections);
-        const hb = lastDetections.filter(d => { const r = getItemResult(d); return r && r.label === 'headband'; }).length;
-        const cloudState = !enableClassifier.checked ? 'off' : (!currentApiKey() ? 'key needed' : `${activeCloudRequests} active`);
-        status(`${detectionMode.value} | ${lastDetections.length} targets | ${hb} headband | ${fps} fps | cloud ${cloudState}`);
-      } catch (err) {
-        status('Detection error: ' + err.message, true);
-      } finally {
-        busy = false;
+    async function ensurePoseDetector(forceReload = false) {
+      await ensureTensorFlowReady();
+      if (forceReload && poseDetector && typeof poseDetector.dispose === 'function') {
+        try { poseDetector.dispose(); } catch (_) {}
+        poseDetector = null;
       }
-    }
-
-    async function startCamera() {
-      isRunning = false;
-      if (currentStream) currentStream.getTracks().forEach(t => t.stop());
-      const res = resolutionMap[Number(resolutionSlider.value)];
-      resolutionValue.textContent = res.label;
-      lensToggle.textContent = 'Lens: ' + (currentLens === 'ultrawide' ? 'Ultrawide' : 'Normal');
-      status('Starting camera...');
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: { facingMode: 'environment', width: { ideal: res.width }, height: { ideal: res.height } }
-      });
-      currentStream = stream;
-      video.srcObject = stream;
-      await new Promise(resolve => video.onloadedmetadata = resolve);
-      await video.play();
-      resizeCanvas();
-      if (currentLens === 'ultrawide') {
-        const track = stream.getVideoTracks()[0];
-        const caps = track.getCapabilities ? track.getCapabilities() : {};
-        if (caps.zoom) {
-          try { await track.applyConstraints({ advanced: [{ zoom: caps.zoom.min }] }); } catch (e) {}
-        }
-      }
-      isRunning = true;
-      loop();
-    }
-
-    async function ensurePoseDetector() {
       if (poseDetector) return poseDetector;
-      status('Loading MoveNet skeleton detector...');
+      status('Loading MoveNet MultiPose detector...');
       poseDetector = await poseDetection.createDetector(
         poseDetection.SupportedModels.MoveNet,
         { modelType: poseDetection.movenet.modelType.MULTIPOSE_LIGHTNING }
@@ -694,20 +574,187 @@
       return poseDetector;
     }
 
-    async function loadAllModels() {
-      status('Loading person-detection backend...');
-      await tf.setBackend('webgl');
-      await tf.ready();
+    async function detectPersonMode() {
+      await ensurePersonDetector();
+      const predictions = await personDetector.detect(video);
+      const threshold = Number(personThreshold.value);
+      return predictions
+        .filter(p => p.class === 'person' && p.score >= threshold)
+        .map(p => {
+          const [x, y, w, h] = p.bbox;
+          return {
+            type: 'person',
+            personRect: { x, y, w, h },
+            headRect: personHeadRect(p.bbox),
+            score: p.score
+          };
+        });
+    }
 
-      status('Loading COCO person detector...');
-      personDetector = await cocoSsd.load({ base: 'mobilenet_v2' });
+    async function detectSkeletonMode() {
+      await ensurePoseDetector();
+      const raw = await poseDetector.estimatePoses(video, { maxPoses: 20, flipHorizontal: false });
+      const threshold = Number(poseThreshold.value);
+      const items = [];
+      for (const pose of raw) {
+        const score = pose.score == null ? 1 : pose.score;
+        if (score < threshold) continue;
+        const headRect = skeletonHeadRect(pose);
+        if (!headRect) continue;
+        items.push({ type: 'pose', pose, headRect, score });
+      }
+      return items;
+    }
 
-      roboflowApiKey = sessionStorage.getItem('roboflowApiKey') || '';
-      if (roboflowApiKey) {
-        apiKeyInput.value = roboflowApiKey;
-        setModelStatus('API key ready; waiting for a head crop');
-      } else {
-        setModelStatus('API key required');
+    async function processFrame() {
+      if (detectionMode.value === 'person') return detectPersonMode();
+      return detectSkeletonMode();
+    }
+
+    async function loop(token) {
+      if (!isRunning || token !== loopToken) return;
+      requestAnimationFrame(() => loop(token));
+      if (busy || video.readyState < 2) return;
+
+      frameIndex++;
+      fpsFrames++;
+      const now = performance.now();
+      if (now - lastFpsTime >= 1000) {
+        fps = fpsFrames;
+        fpsFrames = 0;
+        lastFpsTime = now;
+        updateRuntimeInfo();
+      }
+
+      const every = Math.max(1, Number(detectEvery.value));
+      if (frameIndex % every !== 0) {
+        drawDetections(lastDetections);
+        return;
+      }
+
+      busy = true;
+      try {
+        lastDetections = await processFrame();
+        drawDetections(lastDetections);
+        status(`${detectionMode.value} | ${lastDetections.length} target${lastDetections.length === 1 ? '' : 's'} | ${fps} fps | model-free base`);
+      } catch (err) {
+        console.error(err);
+        status('Detection error: ' + (err && err.message ? err.message : String(err)), true);
+      } finally {
+        busy = false;
+      }
+    }
+
+    async function stopCamera() {
+      isRunning = false;
+      loopToken++;
+      if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+        currentStream = null;
+      }
+      video.srcObject = null;
+    }
+
+    async function applyRequestedLens(stream) {
+      const track = stream.getVideoTracks()[0];
+      if (!track) return 'no video track';
+      const caps = track.getCapabilities ? track.getCapabilities() : {};
+      const settings = track.getSettings ? track.getSettings() : {};
+
+      if (!caps.zoom) {
+        return `zoom control unavailable; browser selected rear camera`;
+      }
+
+      try {
+        if (currentLens === 'ultrawide') {
+          await track.applyConstraints({ advanced: [{ zoom: caps.zoom.min }] });
+        } else {
+          let normalZoom = 1;
+          normalZoom = Math.max(caps.zoom.min, Math.min(normalZoom, caps.zoom.max));
+          await track.applyConstraints({ advanced: [{ zoom: normalZoom }] });
+        }
+        const after = track.getSettings ? track.getSettings() : settings;
+        return `zoom ${after.zoom ?? 'unknown'} (range ${caps.zoom.min}-${caps.zoom.max})`;
+      } catch (err) {
+        return `zoom request failed: ${err.message}`;
+      }
+    }
+
+    async function startCamera() {
+      await stopCamera();
+      updateControlLabels();
+      status('Starting camera...');
+
+      const res = resolutionMap[Number(resolutionSlider.value)];
+      const constraints = {
+        audio: false,
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: res.width },
+          height: { ideal: res.height }
+        }
+      };
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        currentStream = stream;
+        video.srcObject = stream;
+
+        await new Promise((resolve, reject) => {
+          const timer = setTimeout(() => reject(new Error('Camera metadata timed out.')), 8000);
+          video.onloadedmetadata = () => { clearTimeout(timer); resolve(); };
+        });
+        await video.play();
+        resizeCanvas();
+
+        const lensInfo = await applyRequestedLens(stream);
+        updateRuntimeInfo(lensInfo);
+
+        isRunning = true;
+        busy = false;
+        frameIndex = 0;
+        lastDetections = [];
+        loopToken++;
+        const token = loopToken;
+        loop(token);
+      } catch (err) {
+        console.error(err);
+        status('Camera error: ' + (err && err.message ? err.message : String(err)), true);
+        updateRuntimeInfo('camera error');
+      }
+    }
+
+    async function changeDetectionMode() {
+      lastDetections = [];
+      drawDetections([]);
+      try {
+        if (detectionMode.value === 'person') {
+          await ensurePersonDetector();
+          status('Person mode ready.');
+        } else {
+          await ensurePoseDetector();
+          status('Skeleton mode ready.');
+        }
+        updateRuntimeInfo();
+      } catch (err) {
+        console.error(err);
+        status('Detector load error: ' + (err && err.message ? err.message : String(err)), true);
+      }
+    }
+
+    async function reloadCurrentDetector() {
+      reloadDetectorBtn.disabled = true;
+      try {
+        if (detectionMode.value === 'person') {
+          await ensurePersonDetector(true);
+        } else {
+          await ensurePoseDetector(true);
+        }
+        status('Detector reloaded.');
+      } catch (err) {
+        status('Detector reload error: ' + err.message, true);
+      } finally {
+        reloadDetectorBtn.disabled = false;
       }
     }
 
@@ -715,91 +762,61 @@
       drawer.classList.toggle('open');
       drawerTab.textContent = drawer.classList.contains('open') ? '›' : '‹';
     });
-    detectionMode.addEventListener('change', async () => {
-      if (detectionMode.value === 'skeleton') {
-        try {
-          await ensurePoseDetector();
-          status('Skeleton mode ready.');
-        } catch (err) {
-          status('Skeleton model load error: ' + err.message, true);
-          detectionMode.value = 'person';
-        }
-      }
-    });
+
+    detectionMode.addEventListener('change', changeDetectionMode);
+
     lensToggle.addEventListener('click', async () => {
       currentLens = currentLens === 'ultrawide' ? 'normal' : 'ultrawide';
+      updateControlLabels();
       await startCamera();
     });
-    resolutionSlider.addEventListener('input', () => { resolutionValue.textContent = resolutionMap[Number(resolutionSlider.value)].label; });
+
+    resolutionSlider.addEventListener('input', updateControlLabels);
     resolutionSlider.addEventListener('change', startCamera);
-    detectEvery.addEventListener('input', () => { detectEveryValue.textContent = detectEvery.value; });
-    thresholdSlider.addEventListener('input', () => { thresholdValue.textContent = Number(thresholdSlider.value).toFixed(2); });
-    cloudRefresh.addEventListener('input', updateCloudControlReadouts);
-    maxRequests.addEventListener('input', updateCloudControlReadouts);
+    detectEvery.addEventListener('input', updateControlLabels);
+    personThreshold.addEventListener('input', updateControlLabels);
+    poseThreshold.addEventListener('input', updateControlLabels);
+    keypointThreshold.addEventListener('input', updateControlLabels);
+    cropScale.addEventListener('input', updateControlLabels);
 
-    saveApiKeyBtn.addEventListener('click', () => {
-      const key = apiKeyInput.value.trim();
-      if (!key) {
-        roboflowApiKey = '';
-        sessionStorage.removeItem('roboflowApiKey');
-        setModelStatus('API key required');
-        return;
-      }
-      roboflowApiKey = key;
-      sessionStorage.setItem('roboflowApiKey', key);
-      cloudTracks = [];
-      cloudErrorCount = 0;
-      cloudRequestCount = 0;
-      lastCloudError = '';
-      setModelStatus('API key ready; waiting for a head crop');
-    });
-
-    clearApiKeyBtn.addEventListener('click', () => {
-      roboflowApiKey = '';
-      apiKeyInput.value = '';
-      sessionStorage.removeItem('roboflowApiKey');
-      cloudTracks = [];
-      setModelStatus('API key cleared');
-    });
-
-    testApiBtn.addEventListener('click', async () => {
-      try {
-        if (!currentApiKey()) throw new Error('Enter an API key and tap Use key first.');
-        let candidates = lastDetections.filter(d => d.headRect);
-        if (!candidates.length) {
-          if (detectionMode.value === 'person') candidates = await detectPersonMode();
-          else candidates = await detectSkeletonMode();
-        }
-        if (!candidates.length) throw new Error('No visible head crop to test. Point the camera at a person.');
-        const largest = [...candidates].sort((a,b) => (b.headRect.w*b.headRect.h) - (a.headRect.w*a.headRect.h))[0];
-        setModelStatus('testing API...');
-        const result = await callRoboflow(largest.headRect);
-        setModelStatus(`test OK - ${result.label} ${(result.headbandScore * 100).toFixed(1)}% headband`);
-        if (largest.cloudTrack) largest.cloudTrack.result = result;
-        largest.result = result;
-        drawDetections(lastDetections);
-      } catch (err) {
-        const msg = err && err.message ? err.message : String(err);
-        setModelStatus('test failed - ' + msg);
-        status('Cloud API test failed: ' + msg, true);
-      }
+    showDebug.addEventListener('change', () => {
+      if (showDebug.checked) status('Debug display enabled.');
+      else statusEl.style.display = 'none';
     });
 
     restartBtn.addEventListener('click', startCamera);
-    showDebug.addEventListener('change', () => status('Debug display changed.'));
-    window.addEventListener('resize', resizeCanvas);
+    reloadDetectorBtn.addEventListener('click', reloadCurrentDetector);
+
+    window.addEventListener('resize', () => {
+      resizeCanvas();
+      drawDetections(lastDetections);
+    });
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) return;
+      if (!currentStream || currentStream.getVideoTracks().every(t => t.readyState === 'ended')) {
+        startCamera();
+      }
+    });
 
     async function setup() {
+      updateControlLabels();
+      resizeCanvas();
+      updateRuntimeInfo();
+
       try {
-        resizeCanvas();
-        detectEveryValue.textContent = detectEvery.value;
-        thresholdValue.textContent = Number(thresholdSlider.value).toFixed(2);
-        updateCloudControlReadouts();
-        resolutionValue.textContent = resolutionMap[Number(resolutionSlider.value)].label;
-        await loadAllModels();
+        status('Loading TensorFlow.js backend...');
+        await tf.setBackend('webgl');
+        await tf.ready();
+
+        status('Loading COCO person detector...');
+        await ensurePersonDetector();
+
         await startCamera();
+        status('Ready - point the camera at people.');
       } catch (err) {
-        status('Setup error: ' + err.message, true);
+        console.error(err);
+        status('Setup error: ' + (err && err.message ? err.message : String(err)), true);
       }
     }
 
