@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>Headband Tracker - Head Detector + Roboflow</title>
+  <title>Headband Tracker - Head Detector + Roboflow Proxy</title>
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <style>
@@ -217,9 +217,9 @@
       <label>Roboflow headband classifier</label>
       <div class="checkrow"><input id="enableCloudClassifier" type="checkbox" /> <span>Run Roboflow classification on head crops</span></div>
 
-      <label for="apiKeyInput">Private API key</label>
-      <input id="apiKeyInput" type="password" autocomplete="off" placeholder="Paste Roboflow private API key" />
-      <button id="useApiKeyBtn" class="secondary" style="margin-top:8px;">Use key for this tab</button>
+      <label for="proxyUrlInput">Roboflow proxy URL</label>
+      <input id="proxyUrlInput" type="text" inputmode="url" autocomplete="off" placeholder="https://your-worker.workers.dev" />
+      <button id="useProxyUrlBtn" class="secondary" style="margin-top:8px;">Save proxy URL</button>
 
       <label for="cloudThreshold" style="margin-top:10px;">Headband threshold</label>
       <div class="row">
@@ -235,7 +235,7 @@
 
       <button id="testCloudBtn" class="secondary">Test API on largest visible head</button>
       <div id="cloudStatus" class="statusCard">Cloud: off</div>
-      <div class="hint">The API key is never embedded in this file. "Use key" stores it only in sessionStorage for the current browser tab. Direct Safari access can still be blocked by browser/CORS rules.</div>
+      <div class="hint">The browser sends only the 224x224 head crop to your HTTPS proxy. The Roboflow API key stays in the proxy as a server-side secret, which avoids Safari CORS and keeps the key out of GitHub Pages.</div>
     </div>
 
     <div class="group">
@@ -258,7 +258,7 @@
     <div class="group">
       <div class="statusCard">
         <b>Direct head detector:</b> YOLOv11-small, CrowdHuman, ONNX (~38 MB). It is not downloaded until Head mode is selected.<br />
-        <b>Headband classifier:</b> your Roboflow Workflow. Classification is optional and runs only on the square head crops.
+        <b>Headband classifier:</b> your Roboflow Workflow through a small HTTPS proxy. Classification is optional and runs only on the square head crops.
       </div>
     </div>
   </aside>
@@ -297,8 +297,8 @@
     const cropScale = document.getElementById('cropScale');
     const cropScaleValue = document.getElementById('cropScaleValue');
     const enableCloudClassifier = document.getElementById('enableCloudClassifier');
-    const apiKeyInput = document.getElementById('apiKeyInput');
-    const useApiKeyBtn = document.getElementById('useApiKeyBtn');
+    const proxyUrlInput = document.getElementById('proxyUrlInput');
+    const useProxyUrlBtn = document.getElementById('useProxyUrlBtn');
     const cloudThreshold = document.getElementById('cloudThreshold');
     const cloudThresholdValue = document.getElementById('cloudThresholdValue');
     const cloudInterval = document.getElementById('cloudInterval');
@@ -322,10 +322,10 @@
       { label: '1080p', width: 1920, height: 1080 }
     ];
 
-    const HEAD_MODEL_URL = 'https://huggingface.co/Sharath33/Person/resolve/main/yolov11_phd_s.onnx';
+    // Pin the exact model revision that matches the repository's reference inference.py.
+    const HEAD_MODEL_URL = 'https://huggingface.co/Sharath33/Person/resolve/45f16b67b6aebf326889cd9b20ef7704fea1797a/yolov11_phd_s.onnx';
     const HEAD_MODEL_SIZE = 640;
     const HEAD_NMS_IOU = 0.60;
-    const ROBOFLOW_WORKFLOW_URL = 'https://serverless.roboflow.com/nathan-pham-s-workspace/workflows/skullyheadbands3-vskullyheadbands3-3-vit-base-patch16-224-in21k-t1-logic';
     const CLASSIFIER_SIZE = 224;
 
     const headCanvas = document.createElement('canvas');
@@ -344,10 +344,9 @@
     let poseDetector = null;
     let headSession = null;
     let headInputName = null;
-    let headOutputName = null;
     let headModelState = 'not-loaded';
     let headModelError = '';
-    let roboflowApiKey = sessionStorage.getItem('headbandRoboflowKey') || '';
+    let roboflowProxyUrl = localStorage.getItem('headbandRoboflowProxyUrl') || '';
     let cloudTracks = [];
     let cloudRequestsInFlight = 0;
     let isRunning = false;
@@ -579,9 +578,17 @@
           graphOptimizationLevel: 'all'
         });
         headInputName = headSession.inputNames[0];
-        headOutputName = headSession.outputNames[0];
         headModelState = 'loaded';
-        updateRuntimeInfo('direct head detector ready');
+        // This export was packaged for DeepStream (see model.phd.cfg in the
+        // model card), which commonly splits the raw YOLO tensor into a
+        // separate boxes output and scores output rather than the single
+        // fused [1, 4+numClasses, anchors] tensor a plain Ultralytics ONNX
+        // export produces. decodeHeadOutput() below handles either layout,
+        // but log every output name/shape here so a future mismatch is easy
+        // to diagnose from the runtime info panel instead of only from a
+        // generic thrown error.
+        console.log('Head detector outputs:', headSession.outputNames);
+        updateRuntimeInfo('direct head detector ready (outputs: ' + headSession.outputNames.join(', ') + ')');
         return headSession;
       } catch (err) {
         headSession = null;
@@ -619,33 +626,100 @@
       return { tensor: new ort.Tensor('float32', data, [1, 3, HEAD_MODEL_SIZE, HEAD_MODEL_SIZE]), scale, padLeft, padTop };
     }
 
-    function decodeHeadOutput(tensor, prep) {
-      const data = tensor.data;
-      const dims = tensor.dims || [];
-      const threshold = Number(headThreshold.value);
-      const detections = [];
-      let anchors = 0;
-      let channelFirst = true;
-
-      if (dims.length === 3 && dims[1] === 6) {
-        anchors = dims[2];
-        channelFirst = true;
-      } else if (dims.length === 3 && dims[2] === 6) {
-        anchors = dims[1];
-        channelFirst = false;
+    // The model repository's reference inference.py documents a fused raw
+    // YOLO output [1,6,8400] for the two classes (person, head). This decoder
+    // also accepts transposed or split box/score layouts so browser/runtime
+    // differences do not crash the app with a shape-specific assumption.
+    function analyzeYoloTensor(tensor) {
+      const dims = Array.from(tensor.dims || []);
+      let a, b;
+      if (dims.length === 3 && dims[0] === 1) {
+        a = dims[1]; b = dims[2];
+      } else if (dims.length === 2) {
+        a = dims[0]; b = dims[1];
       } else {
-        throw new Error('Unexpected head model output shape [' + dims.join(',') + ']');
+        return null;
       }
 
-      const get = (anchor, channel) => channelFirst ? data[channel * anchors + anchor] : data[anchor * 6 + channel];
+      // For this YOLO export the anchor dimension is much larger than the
+      // channel dimension. This supports [1,6,8400], [1,8400,6], and the
+      // split forms [1,8400,4] + [1,8400,2].
+      const channelFirst = a <= b;
+      const channels = channelFirst ? a : b;
+      const anchors = channelFirst ? b : a;
+      const data = tensor.data;
+      const get = channelFirst
+        ? (anchor, channel) => data[channel * anchors + anchor]
+        : (anchor, channel) => data[anchor * channels + channel];
+      return { dims, channels, anchors, get };
+    }
+
+    function decodeHeadOutput(outputMap, prep) {
+      const threshold = Number(headThreshold.value);
+      const names = Object.keys(outputMap);
+      const shapesText = () => names.map(n => `${n}: [${Array.from(outputMap[n].dims || []).join(',')}]`).join('; ');
+      const analyzed = names
+        .map(name => ({ name, info: analyzeYoloTensor(outputMap[name]) }))
+        .filter(x => x.info);
+
+      if (!analyzed.length) {
+        throw new Error('No usable YOLO output tensor found. Outputs: ' + shapesText());
+      }
+
+      let boxInfo = null;
+      let scoreInfo = null;
+
+      // The repository's reference inference.py expects one fused raw tensor
+      // [1,6,8400] for two classes. Prefer a fused tensor whenever present,
+      // even if the runtime also exposes auxiliary outputs.
+      const fused = analyzed
+        .filter(x => x.info.channels >= 5 && x.info.channels <= 64)
+        .sort((x, y) => x.info.channels - y.info.channels)[0];
+
+      if (fused) {
+        const info = fused.info;
+        boxInfo = { anchors: info.anchors, get: (i, c) => info.get(i, c) };
+        scoreInfo = {
+          anchors: info.anchors,
+          channels: info.channels - 4,
+          get: (i, c) => info.get(i, 4 + c)
+        };
+      } else {
+        // Some runtimes/exports can expose boxes and class scores separately.
+        // If that happens, pair the 4-channel box tensor with a score tensor
+        // that has the same anchor count.
+        const boxEntry = analyzed.find(x => x.info.channels === 4);
+        if (!boxEntry) {
+          throw new Error('Could not find fused YOLO output or 4-channel box output. Outputs: ' + shapesText());
+        }
+        const scoreEntry = analyzed
+          .filter(x => x !== boxEntry && x.info.anchors === boxEntry.info.anchors && x.info.channels >= 1)
+          .sort((x, y) => x.info.channels - y.info.channels)[0];
+        if (!scoreEntry) {
+          throw new Error('Found boxes but no matching class-score output. Outputs: ' + shapesText());
+        }
+        boxInfo = { anchors: boxEntry.info.anchors, get: (i, c) => boxEntry.info.get(i, c) };
+        scoreInfo = { anchors: scoreEntry.info.anchors, channels: scoreEntry.info.channels, get: (i, c) => scoreEntry.info.get(i, c) };
+      }
+
       const vw = video.videoWidth, vh = video.videoHeight;
+      const detections = [];
+      const headIdx = scoreInfo.channels >= 2 ? 1 : 0;
 
-      for (let i = 0; i < anchors; i++) {
-        const personScore = get(i, 4);
-        const headScore = get(i, 5);
-        if (headScore < threshold || headScore < personScore) continue;
+      for (let i = 0; i < boxInfo.anchors; i++) {
+        const headScore = Number(scoreInfo.get(i, headIdx));
+        if (!Number.isFinite(headScore) || headScore < threshold) continue;
+        if (scoreInfo.channels >= 2) {
+          const personScore = Number(scoreInfo.get(i, 0));
+          if (Number.isFinite(personScore) && headScore < personScore) continue;
+        }
 
-        const cx = get(i, 0), cy = get(i, 1), w = get(i, 2), h = get(i, 3);
+        const cx = Number(boxInfo.get(i, 0));
+        const cy = Number(boxInfo.get(i, 1));
+        const w = Number(boxInfo.get(i, 2));
+        const h = Number(boxInfo.get(i, 3));
+        if (![cx, cy, w, h].every(Number.isFinite) || w <= 0 || h <= 0) continue;
+
         let x = (cx - w / 2 - prep.padLeft) / prep.scale;
         let y = (cy - h / 2 - prep.padTop) / prep.scale;
         let ww = w / prep.scale;
@@ -671,8 +745,7 @@
       const feeds = {};
       feeds[headInputName] = prep.tensor;
       const outputMap = await headSession.run(feeds);
-      const output = outputMap[headOutputName] || outputMap[Object.keys(outputMap)[0]];
-      const heads = decodeHeadOutput(output, prep);
+      const heads = decodeHeadOutput(outputMap, prep);
 
       return heads.map(h => {
         const r = h.rect;
@@ -770,34 +843,41 @@
       };
     }
 
+    function normalizeProxyUrl(value) {
+      const trimmed = String(value || '').trim().replace(/\/+$/, '');
+      if (!trimmed) return '';
+      if (!/^https:\/\//i.test(trimmed)) throw new Error('Proxy URL must start with https://');
+      return trimmed;
+    }
+
     async function callRoboflow(rect) {
-      if (!roboflowApiKey) throw new Error('No API key set.');
+      if (!roboflowProxyUrl) throw new Error('No Roboflow proxy URL set.');
       const base64 = cropToBase64(rect);
-      const response = await fetch(ROBOFLOW_WORKFLOW_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + roboflowApiKey
-        },
-        body: JSON.stringify({
-          api_key: roboflowApiKey,
-          inputs: { image: { type: 'base64', value: base64 } }
-        })
-      });
+      let response;
+      try {
+        response = await fetch(roboflowProxyUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: base64 })
+        });
+      } catch (networkErr) {
+        throw new Error('Could not reach the proxy (' + networkErr.message + '). Check the Worker URL and deployment.');
+      }
+
       const text = await response.text();
       let payload = null;
       try { payload = text ? JSON.parse(text) : {}; } catch (_) {}
       if (!response.ok) {
-        const detail = payload ? JSON.stringify(payload).slice(0, 300) : text.slice(0, 300);
-        throw new Error(`HTTP ${response.status}: ${detail || response.statusText}`);
+        const detail = payload ? JSON.stringify(payload).slice(0, 400) : text.slice(0, 400);
+        throw new Error(`Proxy HTTP ${response.status}: ${detail || response.statusText}`);
       }
-      if (!payload) throw new Error('Roboflow returned a non-JSON response.');
+      if (!payload) throw new Error('Proxy returned a non-JSON response.');
       return extractRoboflowClassification(payload);
     }
 
     function maybeClassifyItems(items) {
       cleanupCloudTracks();
-      if (!enableCloudClassifier.checked || !roboflowApiKey) return;
+      if (!enableCloudClassifier.checked || !roboflowProxyUrl) return;
       const now = performance.now();
       const interval = Number(cloudInterval.value);
 
@@ -1184,23 +1264,27 @@
     cloudThreshold.addEventListener('input', updateControlLabels);
     cloudInterval.addEventListener('input', updateControlLabels);
 
-    useApiKeyBtn.addEventListener('click', () => {
-      roboflowApiKey = apiKeyInput.value.trim();
-      if (!roboflowApiKey) {
-        sessionStorage.removeItem('headbandRoboflowKey');
-        cloudStatus.textContent = 'Cloud: no API key set';
-        return;
+    useProxyUrlBtn.addEventListener('click', () => {
+      try {
+        roboflowProxyUrl = normalizeProxyUrl(proxyUrlInput.value);
+        if (!roboflowProxyUrl) {
+          localStorage.removeItem('headbandRoboflowProxyUrl');
+          cloudStatus.textContent = 'Cloud: no proxy URL set';
+          return;
+        }
+        localStorage.setItem('headbandRoboflowProxyUrl', roboflowProxyUrl);
+        proxyUrlInput.value = roboflowProxyUrl;
+        cloudStatus.textContent = 'Cloud: proxy URL saved';
+      } catch (err) {
+        cloudStatus.textContent = 'Cloud: ' + err.message;
       }
-      sessionStorage.setItem('headbandRoboflowKey', roboflowApiKey);
-      apiKeyInput.value = '';
-      cloudStatus.textContent = 'Cloud: API key loaded for this tab';
     });
 
     enableCloudClassifier.addEventListener('change', () => {
       if (!enableCloudClassifier.checked) {
         cloudStatus.textContent = 'Cloud: off';
-      } else if (!roboflowApiKey) {
-        cloudStatus.textContent = 'Cloud: enter API key, then tap Use key';
+      } else if (!roboflowProxyUrl) {
+        cloudStatus.textContent = 'Cloud: enter your proxy URL, then tap Save proxy URL';
       } else {
         cloudStatus.textContent = 'Cloud: enabled';
       }
@@ -1212,8 +1296,8 @@
         cloudStatus.textContent = 'Cloud: no visible head crop to test';
         return;
       }
-      if (!roboflowApiKey) {
-        cloudStatus.textContent = 'Cloud: no API key set';
+      if (!roboflowProxyUrl) {
+        cloudStatus.textContent = 'Cloud: no proxy URL set';
         return;
       }
       const largest = candidates.sort((a,b) => b.headRect.w - a.headRect.w)[0];
@@ -1254,7 +1338,8 @@
       updateControlLabels();
       resizeCanvas();
       updateRuntimeInfo();
-      cloudStatus.textContent = roboflowApiKey ? 'Cloud: API key available for this tab' : 'Cloud: off';
+      proxyUrlInput.value = roboflowProxyUrl;
+      cloudStatus.textContent = roboflowProxyUrl ? 'Cloud: proxy configured' : 'Cloud: off';
 
       try {
         status('Loading TensorFlow.js backend...');
