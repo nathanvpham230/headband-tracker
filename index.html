@@ -56,7 +56,7 @@
   <div id="status">Starting...</div>
 
   <aside id="drawer">
-    <h2>Headband Tracker - Roboflow Cloud</h2>
+    <h2>Headband Tracker - Roboflow Cloud v2</h2>
 
     <div>
       <label for="detectionMode">Detection mode</label>
@@ -361,45 +361,76 @@
       return String(roboflowApiKey || '').trim();
     }
 
+    async function parseRoboflowHttpResponse(response) {
+      const text = await response.text();
+      let payload = null;
+      try { payload = text ? JSON.parse(text) : {}; }
+      catch (_) { throw new Error(`Roboflow HTTP ${response.status}: non-JSON response`); }
+
+      if (!response.ok) {
+        const message = payload?.detail || payload?.message || payload?.error || text || response.statusText;
+        throw new Error(`Roboflow HTTP ${response.status}: ${String(message).slice(0, 220)}`);
+      }
+      return payload;
+    }
+
     async function callRoboflow(rect) {
       const key = currentApiKey();
       if (!key) throw new Error('API key required.');
 
       const base64 = cropToBase64(rect);
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), CLOUD_TIMEOUT_MS);
-      try {
-        const response = await fetch(ROBOFLOW_WORKFLOW_URL, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + key
-          },
-          body: JSON.stringify({
-            inputs: {
-              image: { type: 'base64', value: base64 }
-            }
-          }),
-          signal: controller.signal,
-          cache: 'no-store'
-        });
-
-        const text = await response.text();
-        let payload = null;
-        try { payload = text ? JSON.parse(text) : {}; }
-        catch (_) { throw new Error(`Roboflow HTTP ${response.status}: non-JSON response`); }
-
-        if (!response.ok) {
-          const message = payload?.detail || payload?.message || payload?.error || text || response.statusText;
-          throw new Error(`Roboflow HTTP ${response.status}: ${String(message).slice(0, 180)}`);
+      const requestBody = {
+        api_key: key,
+        inputs: {
+          image: { type: 'base64', value: base64 }
         }
-        return parseRoboflowResult(payload);
-      } catch (err) {
-        if (err && err.name === 'AbortError') throw new Error('Roboflow request timed out.');
-        throw err;
-      } finally {
-        clearTimeout(timeout);
+      };
+
+      // Safari reports many cross-origin failures only as "Load failed".
+      // First use Roboflow's body-auth form because it avoids the custom
+      // Authorization header that can trigger stricter CORS preflight checks.
+      let lastNetworkError = null;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), CLOUD_TIMEOUT_MS);
+        try {
+          const options = {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody),
+            signal: controller.signal,
+            cache: 'no-store',
+            mode: 'cors'
+          };
+
+          // Fallback to the newer Authorization-header form on the second try.
+          if (attempt === 1) {
+            options.headers['Authorization'] = 'Bearer ' + key;
+            options.body = JSON.stringify({
+              inputs: { image: { type: 'base64', value: base64 } }
+            });
+          }
+
+          const response = await fetch(ROBOFLOW_WORKFLOW_URL, options);
+          const payload = await parseRoboflowHttpResponse(response);
+          return parseRoboflowResult(payload);
+        } catch (err) {
+          if (err && err.name === 'AbortError') {
+            lastNetworkError = new Error('Roboflow request timed out.');
+          } else if (err instanceof TypeError || /load failed|failed to fetch|network/i.test(String(err?.message || err))) {
+            lastNetworkError = new Error(
+              'Browser could not reach the Roboflow API (Safari/CORS/network block). ' +
+              'This happened before Roboflow returned an HTTP status.'
+            );
+          } else {
+            // An HTTP response reached us; changing auth style will not fix it.
+            throw err;
+          }
+        } finally {
+          clearTimeout(timeout);
+        }
       }
+      throw lastNetworkError || new Error('Roboflow request failed before receiving a response.');
     }
 
     function rectIou(a, b) {
