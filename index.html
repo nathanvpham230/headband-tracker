@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>Headband Tracker - Head Detector + Roboflow Proxy</title>
+  <title>Headband Tracker - Roboflow + Pico W Distance Guidance</title>
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <style>
@@ -239,6 +239,26 @@
     </div>
 
     <div class="group">
+      <label>Raspberry Pi Pico W link</label>
+      <div class="checkrow"><input id="enablePicoOutput" type="checkbox" /> <span>Send confirmed headband detections to Pico W</span></div>
+
+      <label for="picoUrlInput">Pico W address</label>
+      <input id="picoUrlInput" type="text" inputmode="url" autocomplete="off" placeholder="http://192.168.4.1" />
+      <button id="savePicoUrlBtn" class="secondary" style="margin-top:8px;">Save Pico address</button>
+
+      <label for="picoSendRate" style="margin-top:10px;">Position update rate</label>
+      <div class="row">
+        <input id="picoSendRate" type="range" min="1" max="20" value="10" step="1" />
+        <div id="picoSendRateValue" class="value">10 Hz</div>
+      </div>
+
+      <button id="testPicoBtn" class="secondary">Pair / Test Pico W connection</button>
+      <button id="testPicoMotorsBtn" class="secondary" style="margin-top:8px;">Test motors again</button>
+      <div id="picoStatus" class="statusCard">Pico: off</div>
+      <div class="hint">Join <b>Headband-Pico</b> on the phone, return here, then tap Pair / Test. On the first successful pair after Pico boot, the Pico runs a wiring check: LEFT (GP2), CENTER/AUX (GP3), RIGHT (GP4), 0.5 s each. During tracking, targets left of center pulse LEFT, targets right of center pulse RIGHT, and targets near center pulse LEFT + RIGHT together. Pulse rate automatically increases from about 1.25 to 6.75 Hz using mostly apparent distance (80%, estimated from head-crop size) plus classification confidence (20%). If several headbands are visible, the Pico prioritizes the target that appears closer, with confidence as a smaller tie-breaker. Only Roboflow-confirmed headbands are transmitted; an empty list stops guidance when targets disappear.</div>
+    </div>
+
+    <div class="group">
       <label>Overlays</label>
       <div class="checkrow"><input id="showPersonBoxes" type="checkbox" checked /> <span>Person boxes</span></div>
       <div class="checkrow"><input id="showHeadBoxes" type="checkbox" checked /> <span>Head crop boxes</span></div>
@@ -258,7 +278,8 @@
     <div class="group">
       <div class="statusCard">
         <b>Direct head detector:</b> YOLOv11-small, CrowdHuman, ONNX (~38 MB). It is not downloaded until Head mode is selected.<br />
-        <b>Headband classifier:</b> your Roboflow Workflow through a small HTTPS proxy. Classification is optional and runs only on the square head crops.
+        <b>Headband classifier:</b> your Roboflow Workflow through a small HTTPS proxy. Classification is optional and runs only on the square head crops.<br />
+        <b>Pico W output:</b> confirmed headband positions, apparent size, and confidence are streamed to the Pico W. The Pico uses apparent head size as a rough distance proxy so vibration pulses get faster as the selected target gets closer, with confidence providing a smaller adjustment.
       </div>
     </div>
   </aside>
@@ -305,6 +326,14 @@
     const cloudIntervalValue = document.getElementById('cloudIntervalValue');
     const testCloudBtn = document.getElementById('testCloudBtn');
     const cloudStatus = document.getElementById('cloudStatus');
+    const enablePicoOutput = document.getElementById('enablePicoOutput');
+    const picoUrlInput = document.getElementById('picoUrlInput');
+    const savePicoUrlBtn = document.getElementById('savePicoUrlBtn');
+    const picoSendRate = document.getElementById('picoSendRate');
+    const picoSendRateValue = document.getElementById('picoSendRateValue');
+    const testPicoBtn = document.getElementById('testPicoBtn');
+    const testPicoMotorsBtn = document.getElementById('testPicoMotorsBtn');
+    const picoStatus = document.getElementById('picoStatus');
     const showPersonBoxes = document.getElementById('showPersonBoxes');
     const showHeadBoxes = document.getElementById('showHeadBoxes');
     const showDetectionLabels = document.getElementById('showDetectionLabels');
@@ -347,6 +376,12 @@
     let headModelState = 'not-loaded';
     let headModelError = '';
     let roboflowProxyUrl = localStorage.getItem('headbandRoboflowProxyUrl') || '';
+    let picoBaseUrl = localStorage.getItem('headbandPicoBaseUrl') || 'http://192.168.4.1';
+    let picoLastSendMs = 0;
+    let picoSendPending = false;
+    let picoSequence = 0;
+    let picoPacketsSent = 0;
+    let picoLastSuccessMs = 0;
     let cloudTracks = [];
     let cloudRequestsInFlight = 0;
     let isRunning = false;
@@ -393,6 +428,7 @@
       cropScaleValue.textContent = Number(cropScale.value).toFixed(2) + 'x';
       cloudThresholdValue.textContent = Number(cloudThreshold.value).toFixed(2);
       cloudIntervalValue.textContent = (Number(cloudInterval.value) / 1000).toFixed(2) + 's';
+      picoSendRateValue.textContent = Math.max(1, Number(picoSendRate.value) || 1) + ' Hz';
       lensToggle.textContent = 'Lens: ' + (currentLens === 'ultrawide' ? 'Ultrawide' : 'Normal');
     }
 
@@ -919,6 +955,162 @@
       }
     }
 
+    function normalizePicoUrl(value) {
+      let v = String(value || '').trim().replace(/\/+$/, '');
+      if (!v) return '';
+      if (!/^https?:\/\//i.test(v)) v = 'http://' + v;
+      try {
+        const u = new URL(v);
+        if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('unsupported protocol');
+        return u.origin + u.pathname.replace(/\/+$/, '');
+      } catch (_) {
+        throw new Error('Pico address must look like http://192.168.4.1');
+      }
+    }
+
+    function isLikelyMixedContentPico() {
+      return location.protocol === 'https:' && /^http:\/\//i.test(picoBaseUrl);
+    }
+
+    function buildPicoPayload(items) {
+      const vw = Math.max(1, video.videoWidth || 1);
+      const vh = Math.max(1, video.videoHeight || 1);
+      const threshold = Number(cloudThreshold.value);
+      const headbands = [];
+
+      for (const item of items || []) {
+        if (!item || !item.headRect || !item.cloudResult) continue;
+        const hb = Number(item.cloudResult.headbandScore || 0);
+        if (item.cloudResult.label !== 'headband' || hb < threshold) continue;
+
+        const r = item.headRect;
+        const cx = r.x + r.w / 2;
+        const cy = r.y + r.h / 2;
+        headbands.push({
+          confidence: Number(hb.toFixed(4)),
+          cx: Number((cx / vw).toFixed(5)),
+          cy: Number((cy / vh).toFixed(5)),
+          x: Number((r.x / vw).toFixed(5)),
+          y: Number((r.y / vh).toFixed(5)),
+          w: Number((r.w / vw).toFixed(5)),
+          h: Number((r.h / vh).toFixed(5)),
+          cx_px: Math.round(cx),
+          cy_px: Math.round(cy)
+        });
+      }
+
+      // Stable left-to-right order makes motor assignment on the Pico predictable.
+      headbands.sort((a, b) => a.cx - b.cx);
+
+      return {
+        version: 1,
+        sequence: ++picoSequence,
+        timestamp_ms: Date.now(),
+        detector: detectionMode.value,
+        frame: { width: vw, height: vh },
+        count: headbands.length,
+        headbands
+      };
+    }
+
+    async function fetchWithTimeout(url, options = {}, timeoutMs = 900) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        return await fetch(url, { ...options, signal: controller.signal, cache: 'no-store', credentials: 'omit' });
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    async function sendPicoPayload(payload, updateStatus = true) {
+      if (!picoBaseUrl) throw new Error('No Pico W address set.');
+      const response = await fetchWithTimeout(picoBaseUrl + '/detections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }, 900);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      picoPacketsSent++;
+      picoLastSuccessMs = performance.now();
+      if (updateStatus) {
+        picoStatus.textContent = `Pico: connected | sent ${payload.count} headband${payload.count === 1 ? '' : 's'} | packet ${picoPacketsSent}`;
+      }
+      return response;
+    }
+
+    function maybeSendPicoDetections(items, force = false) {
+      if (!enablePicoOutput.checked || !picoBaseUrl || picoSendPending) return;
+      const now = performance.now();
+      const hz = Math.max(1, Number(picoSendRate.value) || 1);
+      const minInterval = 1000 / hz;
+      if (!force && now - picoLastSendMs < minInterval) return;
+      picoLastSendMs = now;
+      picoSendPending = true;
+      const payload = buildPicoPayload(items);
+
+      sendPicoPayload(payload, true).catch(err => {
+        const reason = err && err.name === 'AbortError' ? 'timeout' : (err && err.message ? err.message : String(err));
+        const mixed = isLikelyMixedContentPico() ? ' HTTPS page may be blocking HTTP access to the local Pico.' : '';
+        picoStatus.textContent = `Pico: send error - ${reason}.${mixed}`;
+      }).finally(() => {
+        picoSendPending = false;
+      });
+    }
+
+    async function testPicoConnection() {
+      if (!picoBaseUrl) {
+        picoStatus.textContent = 'Pico: enter an address first';
+        return;
+      }
+      testPicoBtn.disabled = true;
+      testPicoMotorsBtn.disabled = true;
+      picoStatus.textContent = 'Pico: testing / pairing...';
+      try {
+        const response = await fetchWithTimeout(picoBaseUrl + '/ping', { method: 'GET' }, 1200);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const text = await response.text();
+
+        const pairResponse = await fetchWithTimeout(picoBaseUrl + '/pair', { method: 'POST' }, 1200);
+        if (!pairResponse.ok) throw new Error(`pair HTTP ${pairResponse.status}`);
+        let pairInfo = {};
+        try { pairInfo = await pairResponse.json(); } catch (_) {}
+
+        if (pairInfo.motor_test_started) {
+          picoStatus.textContent = `Pico: paired at ${picoBaseUrl} | wiring test running: LEFT -> CENTER/AUX -> RIGHT, 0.5 s each`;
+        } else {
+          picoStatus.textContent = `Pico: paired at ${picoBaseUrl}${text ? ' | ' + text.slice(0, 80) : ''} | wiring test already completed this boot`;
+        }
+      } catch (err) {
+        const reason = err && err.name === 'AbortError' ? 'timeout' : (err && err.message ? err.message : String(err));
+        const mixed = isLikelyMixedContentPico() ? ' This page is HTTPS while the Pico is HTTP; Safari/Chrome may block that combination.' : '';
+        picoStatus.textContent = `Pico: connection failed - ${reason}.${mixed}`;
+      } finally {
+        testPicoBtn.disabled = false;
+        testPicoMotorsBtn.disabled = false;
+      }
+    }
+
+    async function testPicoMotors() {
+      if (!picoBaseUrl) {
+        picoStatus.textContent = 'Pico: enter an address first';
+        return;
+      }
+      testPicoMotorsBtn.disabled = true;
+      picoStatus.textContent = 'Pico: starting motor wiring test...';
+      try {
+        const response = await fetchWithTimeout(picoBaseUrl + '/motor-test', { method: 'POST' }, 1200);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        picoStatus.textContent = 'Pico: motor test running | LEFT -> CENTER/AUX -> RIGHT | 0.5 s each';
+      } catch (err) {
+        const reason = err && err.name === 'AbortError' ? 'timeout' : (err && err.message ? err.message : String(err));
+        const mixed = isLikelyMixedContentPico() ? ' HTTPS page may be blocking HTTP access to the local Pico.' : '';
+        picoStatus.textContent = `Pico: motor-test error - ${reason}.${mixed}`;
+      } finally {
+        testPicoMotorsBtn.disabled = false;
+      }
+    }
+
     function drawText(text, x, y, background = 'rgba(0,0,0,0.72)', color = '#fff') {
       ctx.font = '14px Arial';
       const padding = 4;
@@ -928,6 +1120,77 @@
       ctx.fillRect(x, top, metrics.width + padding * 2, 20);
       ctx.fillStyle = color;
       ctx.fillText(text, x + padding, top + 15);
+    }
+
+    function labelRectsOverlap(a, b, gap = 3) {
+      return !(a.x + a.w + gap <= b.x || b.x + b.w + gap <= a.x ||
+               a.y + a.h + gap <= b.y || b.y + b.h + gap <= a.y);
+    }
+
+    function drawCompactTag(text, targetRect, background, occupiedLabels, placement = 'above') {
+      const screen = displaySize();
+      ctx.font = '700 13px Arial';
+      const padX = 5;
+      const tagH = 19;
+      const tagW = Math.ceil(ctx.measureText(text).width) + padX * 2;
+      const cx = targetRect.x + targetRect.w / 2;
+
+      const aboveY = targetRect.y - tagH - 4;
+      const belowY = targetRect.y + targetRect.h + 4;
+      const insideTopY = targetRect.y + 3;
+      const insideBottomY = targetRect.y + targetRect.h - tagH - 3;
+
+      const candidates = placement === 'below'
+        ? [
+            { x: cx - tagW / 2, y: belowY },
+            { x: cx - tagW / 2, y: aboveY },
+            { x: targetRect.x + 3, y: insideBottomY },
+            { x: targetRect.x + 3, y: insideTopY }
+          ]
+        : [
+            { x: cx - tagW / 2, y: aboveY },
+            { x: cx - tagW / 2, y: belowY },
+            { x: targetRect.x + 3, y: insideTopY },
+            { x: targetRect.x + 3, y: insideBottomY }
+          ];
+
+      let chosen = null;
+      for (const c of candidates) {
+        const rect = {
+          x: Math.max(2, Math.min(c.x, screen.width - tagW - 2)),
+          y: Math.max(2, Math.min(c.y, screen.height - tagH - 2)),
+          w: tagW,
+          h: tagH
+        };
+        if (!occupiedLabels.some(o => labelRectsOverlap(rect, o))) {
+          chosen = rect;
+          break;
+        }
+      }
+
+      if (!chosen) {
+        // Dense crowd fallback: stack the tag above the target until it finds room.
+        let y = Math.max(2, aboveY);
+        for (let i = 0; i < 8; i++) {
+          const rect = {
+            x: Math.max(2, Math.min(cx - tagW / 2, screen.width - tagW - 2)),
+            y: Math.max(2, Math.min(y - i * (tagH + 2), screen.height - tagH - 2)),
+            w: tagW,
+            h: tagH
+          };
+          if (!occupiedLabels.some(o => labelRectsOverlap(rect, o))) {
+            chosen = rect;
+            break;
+          }
+        }
+      }
+
+      if (!chosen) return;
+      occupiedLabels.push(chosen);
+      ctx.fillStyle = background;
+      ctx.fillRect(chosen.x, chosen.y, chosen.w, chosen.h);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(text, chosen.x + padX, chosen.y + 14);
     }
 
     function drawSkeletonPose(pose) {
@@ -965,16 +1228,15 @@
     function drawDetections(items) {
       const size = displaySize();
       ctx.clearRect(0, 0, size.width, size.height);
+      const occupiedLabels = [];
 
+      // Draw geometry first so the compact result tags stay visually dominant.
       for (const item of items) {
         if (item.type === 'person' && showPersonBoxes.checked && item.personRect) {
           const r = toScreenRect(item.personRect);
           ctx.strokeStyle = 'rgba(0,255,0,0.88)';
           ctx.lineWidth = 2;
           ctx.strokeRect(r.x, r.y, r.w, r.h);
-          if (showDetectionLabels.checked) {
-            drawText(`person ${(item.score * 100).toFixed(0)}%`, r.x, r.y - 3, 'rgba(0,90,0,0.80)');
-          }
         }
 
         if (item.type === 'pose' && item.pose) {
@@ -986,7 +1248,6 @@
           ctx.strokeStyle = 'rgba(0,180,255,0.90)';
           ctx.lineWidth = 2;
           ctx.strokeRect(raw.x, raw.y, raw.w, raw.h);
-          if (showDetectionLabels.checked) drawText(`head ${(item.score * 100).toFixed(0)}%`, raw.x, raw.y - 3, 'rgba(0,75,110,0.84)');
         }
 
         if (showHeadBoxes.checked && item.headRect) {
@@ -1002,15 +1263,43 @@
             ctx.arc(r.x + r.w / 2, r.y + r.h / 2, 4, 0, Math.PI * 2);
             ctx.fill();
           }
+        }
+      }
 
-          if (showDetectionLabels.checked) {
-            if (item.cloudResult) {
-              const pct = (item.cloudResult.headbandScore * 100).toFixed(0);
-              drawText(`${item.cloudResult.label} | HB ${pct}%`, r.x, r.y + 18, item.cloudResult.label === 'headband' ? 'rgba(0,105,45,0.88)' : 'rgba(100,80,0,0.84)');
-            } else {
-              drawText('head crop', r.x, r.y + 18, 'rgba(100,80,0,0.84)');
-            }
-          }
+      if (!showDetectionLabels.checked) return;
+
+      // Classification tags first. They are short (HB / NO) and get first choice
+      // of label position, which prevents person-confidence text from covering them.
+      for (const item of items) {
+        if (!item.headRect) continue;
+        const r = toScreenRect(item.headRect);
+        if (item.cloudResult) {
+          const hbScore = Math.max(0, Math.min(1, Number(item.cloudResult.headbandScore) || 0));
+          const isHeadband = item.cloudResult.label === 'headband';
+          const confidence = isHeadband ? hbScore : 1 - hbScore;
+          const text = `${isHeadband ? 'HB' : 'NO'} ${Math.round(confidence * 100)}%`;
+          drawCompactTag(
+            text,
+            r,
+            isHeadband ? 'rgba(0,110,45,0.92)' : 'rgba(120,92,0,0.92)',
+            occupiedLabels,
+            'above'
+          );
+        } else {
+          drawCompactTag('...', r, 'rgba(70,70,70,0.82)', occupiedLabels, 'above');
+        }
+      }
+
+      // Local detector confidence is secondary and placed below its box.
+      for (const item of items) {
+        if (item.type === 'person' && showPersonBoxes.checked && item.personRect) {
+          const r = toScreenRect(item.personRect);
+          drawCompactTag(`P ${Math.round(item.score * 100)}%`, r, 'rgba(0,90,0,0.78)', occupiedLabels, 'below');
+        }
+
+        if (item.type === 'head' && showPersonBoxes.checked && item.detectorHeadRect) {
+          const raw = toScreenRect(item.detectorHeadRect);
+          drawCompactTag(`H ${Math.round(item.score * 100)}%`, raw, 'rgba(0,75,110,0.80)', occupiedLabels, 'below');
         }
       }
     }
@@ -1103,6 +1392,7 @@
 
       const every = Math.max(1, Number(detectEvery.value));
       if (frameIndex % every !== 0) {
+        maybeSendPicoDetections(lastDetections);
         drawDetections(lastDetections);
         return;
       }
@@ -1112,6 +1402,7 @@
         lastDetections = await processFrame();
         attachCachedCloudResults(lastDetections);
         maybeClassifyItems(lastDetections);
+        maybeSendPicoDetections(lastDetections);
         drawDetections(lastDetections);
         status(`${detectionMode.value} | ${lastDetections.length} target${lastDetections.length === 1 ? '' : 's'} | ${fps} fps | cloud ${enableCloudClassifier.checked ? 'on' : 'off'}`);
       } catch (err) {
@@ -1263,6 +1554,43 @@
     cropScale.addEventListener('input', updateControlLabels);
     cloudThreshold.addEventListener('input', updateControlLabels);
     cloudInterval.addEventListener('input', updateControlLabels);
+    picoSendRate.addEventListener('input', updateControlLabels);
+
+    savePicoUrlBtn.addEventListener('click', () => {
+      try {
+        picoBaseUrl = normalizePicoUrl(picoUrlInput.value);
+        if (!picoBaseUrl) {
+          localStorage.removeItem('headbandPicoBaseUrl');
+          picoStatus.textContent = 'Pico: no address set';
+          return;
+        }
+        localStorage.setItem('headbandPicoBaseUrl', picoBaseUrl);
+        picoUrlInput.value = picoBaseUrl;
+        picoStatus.textContent = `Pico: address saved - ${picoBaseUrl}`;
+      } catch (err) {
+        picoStatus.textContent = 'Pico: ' + err.message;
+      }
+    });
+
+    testPicoBtn.addEventListener('click', testPicoConnection);
+    testPicoMotorsBtn.addEventListener('click', testPicoMotors);
+
+    enablePicoOutput.addEventListener('change', () => {
+      if (!enablePicoOutput.checked) {
+        picoStatus.textContent = 'Pico: off';
+        return;
+      }
+      if (!picoBaseUrl) {
+        picoStatus.textContent = 'Pico: enter an address, then save it';
+        return;
+      }
+      if (isLikelyMixedContentPico()) {
+        picoStatus.textContent = 'Pico: enabled, but this HTTPS page may be blocked from sending to an HTTP Pico. Tap Test Pico W connection.';
+      } else {
+        picoStatus.textContent = 'Pico: enabled';
+      }
+      maybeSendPicoDetections(lastDetections, true);
+    });
 
     useProxyUrlBtn.addEventListener('click', () => {
       try {
@@ -1340,6 +1668,8 @@
       updateRuntimeInfo();
       proxyUrlInput.value = roboflowProxyUrl;
       cloudStatus.textContent = roboflowProxyUrl ? 'Cloud: proxy configured' : 'Cloud: off';
+      picoUrlInput.value = picoBaseUrl;
+      picoStatus.textContent = 'Pico: off - join Headband-Pico Wi-Fi, then test the connection';
 
       try {
         status('Loading TensorFlow.js backend...');
